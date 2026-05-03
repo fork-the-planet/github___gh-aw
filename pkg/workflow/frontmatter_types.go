@@ -189,15 +189,36 @@ type RateLimitConfig struct {
 	IgnoredRoles []string `json:"ignored-roles,omitempty"` // Roles that are exempt from rate limiting (e.g., ["admin", "maintainer"])
 }
 
-// OTLPConfig holds configuration for OTLP (OpenTelemetry Protocol) trace export.
-type OTLPConfig struct {
-	// Endpoint is the OTLP collector endpoint URL (e.g. "https://traces.example.com:4317").
+// OTLPEndpointConfig holds configuration for a single OTLP endpoint entry
+// used when the `endpoint` field is an object or an element of an array.
+type OTLPEndpointConfig struct {
+	// URL is the OTLP collector endpoint URL (e.g. "https://traces.example.com:4317").
 	// Supports GitHub Actions expressions such as ${{ secrets.OTLP_ENDPOINT }}.
 	// When a static URL is provided, its hostname is automatically added to the
 	// network firewall allowlist.
-	Endpoint string `json:"endpoint,omitempty"`
+	URL string `json:"url,omitempty"`
 
-	// Headers holds HTTP headers to include with every OTLP export request.
+	// Headers holds HTTP headers to include with every OTLP export request for this endpoint.
+	// Same format as OTLPConfig.Headers: preferred map form or deprecated comma-separated string.
+	Headers any `json:"headers,omitempty"`
+}
+
+// OTLPConfig holds configuration for OTLP (OpenTelemetry Protocol) trace export.
+type OTLPConfig struct {
+	// Endpoint accepts one of three forms:
+	//   - string:        backward-compat URL  (e.g. "https://traces.example.com:4317")
+	//   - object:        single endpoint with URL and optional headers
+	//                    (e.g. {url: "https://...", headers: {Authorization: "Bearer ${{ secrets.TOKEN }}"}})
+	//   - array:         multiple endpoints for concurrent fan-out
+	//                    (e.g. [{url: "https://primary:4317", headers: {...}}, {url: "https://backup:4317"}])
+	// Supports GitHub Actions expressions such as ${{ secrets.OTLP_ENDPOINT }}.
+	// When a static URL is provided, its hostname is automatically added to the
+	// network firewall allowlist.
+	Endpoint any `json:"endpoint,omitempty"`
+
+	// Headers holds HTTP headers for the backward-compat string endpoint form.
+	// Only used when Endpoint is a plain string; object/array endpoint entries
+	// carry their own per-endpoint headers.
 	// Preferred form: a map of header name to value (e.g. {"Authorization": "Bearer ${{ secrets.TOKEN }}"}).
 	// Deprecated string form: a comma-separated list of key=value pairs
 	// (e.g. "Authorization=Bearer <token>"). Use the map form instead.

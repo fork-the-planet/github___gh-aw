@@ -18,7 +18,9 @@ const {
   buildOTLPPayload,
   sanitizeOTLPPayload,
   parseOTLPHeaders,
+  parseOTLPEndpoints,
   sendOTLPSpan,
+  sendOTLPToAllEndpoints,
   sendJobSetupSpan,
   sendJobConclusionSpan,
   readLastRateLimitEntry,
@@ -1043,7 +1045,7 @@ describe("sendJobSetupSpan", () => {
   /** @type {Record<string, string | undefined>} */
   const savedEnv = {};
   const envKeys = [
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "GH_AW_OTLP_ENDPOINTS",
     "OTEL_SERVICE_NAME",
     "INPUT_JOB_NAME",
     "INPUT_TRACE_ID",
@@ -1104,14 +1106,14 @@ describe("sendJobSetupSpan", () => {
     return undefined;
   }
 
-  it("returns a trace ID and span ID even when OTEL_EXPORTER_OTLP_ENDPOINT is not set", async () => {
+  it("returns a trace ID and span ID even when GH_AW_OTLP_ENDPOINTS is not set", async () => {
     const { traceId, spanId } = await sendJobSetupSpan();
     expect(traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(spanId).toMatch(/^[0-9a-f]{16}$/);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("writes JSONL mirror even when OTEL_EXPORTER_OTLP_ENDPOINT is not set", async () => {
+  it("writes JSONL mirror even when GH_AW_OTLP_ENDPOINTS is not set", async () => {
     await sendJobSetupSpan();
     expect(appendSpy).toHaveBeenCalledOnce();
     const [filePath, content] = appendSpy.mock.calls[0];
@@ -1151,7 +1153,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
     process.env.GH_AW_INFO_WORKFLOW_NAME = "my-workflow";
     process.env.GH_AW_INFO_ENGINE_ID = "copilot";
@@ -1189,7 +1191,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
     process.env.GITHUB_RUN_ID = "25280567207";
     process.env.GITHUB_RUN_ATTEMPT = "1";
@@ -1232,7 +1234,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1246,7 +1248,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     const correlationTraceId = "b".repeat(32);
 
     const { traceId } = await sendJobSetupSpan({ traceId: correlationTraceId });
@@ -1260,7 +1262,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_TRACE_ID = "c".repeat(32);
 
     const { traceId } = await sendJobSetupSpan();
@@ -1274,7 +1276,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_TRACE_ID = "d".repeat(32);
 
     const { traceId } = await sendJobSetupSpan({ traceId: "e".repeat(32) });
@@ -1288,7 +1290,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     const startMs = 1_700_000_000_000;
     await sendJobSetupSpan({ startMs });
 
@@ -1301,7 +1303,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.OTEL_SERVICE_NAME = "my-service";
 
     await sendJobSetupSpan();
@@ -1315,7 +1317,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
 
@@ -1331,7 +1333,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_EVENT_NAME = "workflow_dispatch";
 
     await sendJobSetupSpan();
@@ -1345,7 +1347,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1359,7 +1361,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_EVENT_NAME = "workflow_dispatch";
 
     await sendJobSetupSpan();
@@ -1373,7 +1375,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1387,7 +1389,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REF = "refs/heads/main";
 
     await sendJobSetupSpan();
@@ -1401,7 +1403,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REF_NAME = "main";
     process.env.GITHUB_HEAD_REF = "feature-branch";
 
@@ -1417,7 +1419,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1431,7 +1433,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1446,7 +1448,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_SHA = "abc1234567890def";
 
     await sendJobSetupSpan();
@@ -1460,7 +1462,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1474,7 +1476,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_WORKFLOW_REF = "owner/repo/.github/workflows/my-workflow.yml@refs/heads/main";
 
     await sendJobSetupSpan();
@@ -1488,7 +1490,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1502,7 +1504,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
     delete process.env.GITHUB_SERVER_URL;
@@ -1521,7 +1523,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
     process.env.GITHUB_SERVER_URL = "https://github.example.com";
@@ -1540,7 +1542,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     delete process.env.GITHUB_REPOSITORY;
     delete process.env.GITHUB_RUN_ID;
 
@@ -1556,7 +1558,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_INFO_VERSION = "v1.2.3";
 
     await sendJobSetupSpan();
@@ -1570,7 +1572,7 @@ describe("sendJobSetupSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobSetupSpan();
 
@@ -1597,7 +1599,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       const parentSpanId = "abcdef1234567890";
 
       readFileSpy.mockImplementation(filePath => {
@@ -1618,7 +1620,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1638,7 +1640,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1672,7 +1674,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       await sendJobSetupSpan();
 
@@ -1685,7 +1687,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_INFO_STAGED = "true";
 
       await sendJobSetupSpan();
@@ -1702,7 +1704,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1722,7 +1724,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1759,7 +1761,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1783,7 +1785,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1805,7 +1807,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -1825,7 +1827,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GITHUB_RUN_ID = "555";
       process.env.GITHUB_RUN_ATTEMPT = "2";
 
@@ -1847,7 +1849,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GITHUB_RUN_ID = "777";
       process.env.GITHUB_RUN_ATTEMPT = "3";
 
@@ -1902,7 +1904,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === EXPERIMENT_ASSIGNMENTS_PATH) {
@@ -1925,7 +1927,7 @@ describe("sendJobSetupSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       await sendJobSetupSpan();
 
@@ -2050,7 +2052,7 @@ describe("sendJobConclusionSpan", () => {
   /** @type {Record<string, string | undefined>} */
   const savedEnv = {};
   const envKeys = [
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "GH_AW_OTLP_ENDPOINTS",
     "OTEL_SERVICE_NAME",
     "GH_AW_EFFECTIVE_TOKENS",
     "GH_AW_INFO_VERSION",
@@ -2096,7 +2098,7 @@ describe("sendJobConclusionSpan", () => {
     appendSpy.mockRestore();
   });
 
-  it("skips OTLP export but writes JSONL mirror when OTEL_EXPORTER_OTLP_ENDPOINT is not set", async () => {
+  it("skips OTLP export but writes JSONL mirror when GH_AW_OTLP_ENDPOINTS is not set", async () => {
     await sendJobConclusionSpan("gh-aw.job.conclusion");
     expect(fetch).not.toHaveBeenCalled();
     expect(appendSpy).toHaveBeenCalledOnce();
@@ -2110,7 +2112,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_RUN_ID = "111";
     process.env.GITHUB_ACTOR = "octocat";
     process.env.GITHUB_REPOSITORY = "owner/repo";
@@ -2129,7 +2131,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_RUN_ID = "888";
     process.env.GITHUB_RUN_ATTEMPT = "4";
     process.env.GITHUB_REPOSITORY = "owner/repo";
@@ -2160,7 +2162,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
     process.env.GITHUB_AW_OTEL_TRACE_ID = "f".repeat(32);
     process.env.GITHUB_AW_OTEL_PARENT_SPAN_ID = "abcdef1234567890";
@@ -2202,7 +2204,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     const statSpy = vi.spyOn(fs, "statSync").mockImplementation(() => {
       throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
@@ -2221,7 +2223,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
     process.env.GH_AW_AGENT_CONCLUSION = "timed_out";
 
@@ -2253,7 +2255,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
     process.env.GH_AW_AGENT_CONCLUSION = "cancelled";
 
@@ -2285,7 +2287,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "safe-outputs";
 
     const statSpy = vi.spyOn(fs, "statSync").mockReturnValue(/** @type {Partial<fs.Stats>} */ { mtimeMs: 1_700_000_005_000 });
@@ -2304,7 +2306,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
 
     const startMs = 1_700_000_000_000;
@@ -2329,7 +2331,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
 
     const startMs = 1_700_000_000_000;
@@ -2362,7 +2364,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
 
     const startMs = 1_700_000_000_000;
@@ -2393,7 +2395,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.INPUT_JOB_NAME = "agent";
 
     const startMs = 1_700_000_000_000;
@@ -2423,7 +2425,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     const readFileSpy = vi.spyOn(fs, "readFileSync").mockImplementation(filePath => {
       if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -2446,7 +2448,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     const readFileSpy = vi.spyOn(fs, "readFileSync").mockImplementation(filePath => {
       if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -2469,7 +2471,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_RUN_ATTEMPT = "3";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2484,7 +2486,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2498,7 +2500,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_INFO_WORKFLOW_NAME = "env-workflow";
     process.env.GITHUB_WORKFLOW = "github-workflow";
 
@@ -2522,7 +2524,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_INFO_WORKFLOW_NAME = "env-workflow";
     process.env.GITHUB_WORKFLOW = "github-workflow";
 
@@ -2546,7 +2548,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_WORKFLOW = "github-workflow";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2561,7 +2563,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2575,7 +2577,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_EFFECTIVE_TOKENS = "5000";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2591,7 +2593,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2605,7 +2607,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_INFO_VERSION = "v2.0.0";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2618,7 +2620,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_AW_OTEL_TRACE_ID = "f".repeat(32);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2632,7 +2634,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     const parentSpanId = "abcdef1234567890";
     process.env.GITHUB_AW_OTEL_PARENT_SPAN_ID = parentSpanId;
 
@@ -2647,7 +2649,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2660,7 +2662,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_AW_OTEL_TRACE_ID = "F".repeat(32); // uppercase — should be normalised
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2674,7 +2676,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
 
@@ -2690,7 +2692,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_EVENT_NAME = "pull_request";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2704,7 +2706,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2718,7 +2720,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_EVENT_NAME = "pull_request";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2732,7 +2734,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2746,7 +2748,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REF = "refs/heads/main";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2760,7 +2762,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REF_NAME = "123/merge";
     process.env.GITHUB_HEAD_REF = "feature-branch";
 
@@ -2776,7 +2778,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2790,7 +2792,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2805,7 +2807,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_SHA = "abc1234567890def";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2819,7 +2821,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -2833,7 +2835,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
     delete process.env.GITHUB_SERVER_URL;
@@ -2852,7 +2854,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_REPOSITORY = "owner/repo";
     process.env.GITHUB_RUN_ID = "987654321";
     process.env.GITHUB_SERVER_URL = "https://github.example.com";
@@ -2871,7 +2873,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     delete process.env.GITHUB_REPOSITORY;
     delete process.env.GITHUB_RUN_ID;
 
@@ -2887,7 +2889,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GH_AW_INFO_VERSION = "v3.0.0";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -2914,7 +2916,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -2941,7 +2943,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "success";
 
       readFileSpy.mockImplementation(filePath => {
@@ -2969,7 +2971,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -2990,7 +2992,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "timed_out";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3011,7 +3013,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "cancelled";
 
       await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -3026,7 +3028,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       const manyErrors = [1, 2, 3, 4, 5, 6, 7].map(i => ({ message: `Error ${i}` }));
@@ -3053,7 +3055,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       const longMessage = "x".repeat(300);
@@ -3076,7 +3078,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3100,7 +3102,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "success";
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/agent_output.json") {
@@ -3126,7 +3128,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       // readFileSpy already throws ENOENT for all paths (set in beforeEach)
@@ -3145,7 +3147,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3172,7 +3174,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       const longMessage = "x".repeat(2000);
@@ -3196,7 +3198,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "success";
 
       await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -3210,7 +3212,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       // readFileSpy already throws ENOENT for all paths (set in beforeEach)
@@ -3226,7 +3228,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       const manyErrors = [1, 2, 3, 4, 5, 6, 7].map(i => ({ message: `Error ${i}` }));
@@ -3253,7 +3255,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3275,7 +3277,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3300,7 +3302,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3324,7 +3326,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3349,7 +3351,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       readFileSpy.mockImplementation(filePath => {
@@ -3374,7 +3376,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
       process.env.GH_AW_AGENT_CONCLUSION = "failure";
 
       const longPrefix = "a".repeat(65);
@@ -3411,7 +3413,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const entry = { timestamp: "2026-04-05T09:00:00.000Z", source: "response_headers", operation: "issues.get", resource: "core", limit: 5000, remaining: 4823, used: 177, reset: "2026-04-05T09:30:00.000Z" };
       readFileSpy.mockImplementation(filePath => {
@@ -3437,7 +3439,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const first = { resource: "core", limit: 5000, remaining: 4900, used: 100 };
       const last = { resource: "core", limit: 5000, remaining: 4500, used: 500 };
@@ -3461,7 +3463,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       // readFileSpy already throws ENOENT for all paths
 
@@ -3481,7 +3483,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const entry = { resource: "core", limit: 5000, remaining: 4823, used: 177 };
       readFileSpy.mockImplementation(filePath => {
@@ -3504,7 +3506,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === GITHUB_RATE_LIMITS_JSONL_PATH) {
@@ -3544,7 +3546,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const usage = { input_tokens: 48200, output_tokens: 1350, cache_read_tokens: 41000, cache_write_tokens: 3100, effective_tokens: 9800 };
       readFileSpy.mockImplementation(filePath => {
@@ -3569,7 +3571,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       // readFileSpy already throws ENOENT for all paths
 
@@ -3588,7 +3590,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const usage = { input_tokens: 1000, output_tokens: 0, cache_read_tokens: 500, cache_write_tokens: 0 };
       readFileSpy.mockImplementation(filePath => {
@@ -3614,7 +3616,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/agent_usage.json") {
@@ -3657,7 +3659,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const usage = { input_tokens: 48200, output_tokens: 1350, cache_read_tokens: 41000, cache_write_tokens: 3100, effective_tokens: 9800 };
       readFileSpy.mockImplementation(filePath => {
@@ -3685,7 +3687,7 @@ describe("sendJobConclusionSpan", () => {
 
       // Clear INPUT_JOB_NAME so no agent sub-span is emitted
       delete process.env.INPUT_JOB_NAME;
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const usage = { input_tokens: 5000, output_tokens: 200, cache_read_tokens: 100, cache_write_tokens: 50, effective_tokens: 500 };
       readFileSpy.mockImplementation(filePath => {
@@ -3711,7 +3713,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       // readFileSpy already throws ENOENT for all paths
 
@@ -3731,7 +3733,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       const usage = { input_tokens: 1000, output_tokens: 0, cache_read_tokens: 500, cache_write_tokens: 0 };
       readFileSpy.mockImplementation(filePath => {
@@ -3759,7 +3761,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
     process.env.GITHUB_WORKFLOW_REF = "owner/repo/.github/workflows/my-workflow.yml@refs/heads/main";
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
@@ -3773,7 +3775,7 @@ describe("sendJobConclusionSpan", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
     vi.stubGlobal("fetch", mockFetch);
 
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
     await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -3800,7 +3802,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -3818,7 +3820,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -3843,7 +3845,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -3882,7 +3884,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -3906,7 +3908,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -3928,7 +3930,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === "/tmp/gh-aw/aw_info.json") {
@@ -3948,7 +3950,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -3979,7 +3981,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       readFileSpy.mockImplementation(filePath => {
         if (filePath === EXPERIMENT_ASSIGNMENTS_PATH) {
@@ -4002,7 +4004,7 @@ describe("sendJobConclusionSpan", () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
       vi.stubGlobal("fetch", mockFetch);
 
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com";
+      process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com" }]);
 
       await sendJobConclusionSpan("gh-aw.job.conclusion");
 
@@ -4012,5 +4014,199 @@ describe("sendJobConclusionSpan", () => {
       expect(keys.some(k => k.startsWith("gh-aw.experiment."))).toBe(false);
       expect(keys).not.toContain("gh-aw.experiments");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseOTLPEndpoints
+// ---------------------------------------------------------------------------
+
+describe("parseOTLPEndpoints", () => {
+  afterEach(() => {
+    delete process.env.GH_AW_OTLP_ENDPOINTS;
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+  });
+
+  it("returns empty array when no env vars are set", () => {
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when only legacy OTEL_EXPORTER_OTLP_ENDPOINT is set (no longer a fallback)", () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://traces.example.com:4317";
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([]);
+  });
+
+  it("parses GH_AW_OTLP_ENDPOINTS JSON array with single entry", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com:4317", headers: "Authorization=Bearer tok" }]);
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([{ url: "https://traces.example.com:4317", headers: "Authorization=Bearer tok" }]);
+  });
+
+  it("parses GH_AW_OTLP_ENDPOINTS JSON array with multiple entries", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://primary.example.com:4317", headers: "Authorization=Bearer tok1" }, { url: "https://secondary.example.com:4317" }]);
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([{ url: "https://primary.example.com:4317", headers: "Authorization=Bearer tok1" }, { url: "https://secondary.example.com:4317" }]);
+  });
+
+  it("filters out entries with empty url from GH_AW_OTLP_ENDPOINTS", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "" }, { url: "https://valid.example.com:4317" }]);
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([{ url: "https://valid.example.com:4317" }]);
+  });
+
+  it("returns empty array when GH_AW_OTLP_ENDPOINTS is invalid JSON", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = "not-valid-json";
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array when GH_AW_OTLP_ENDPOINTS is an empty array", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = "[]";
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([]);
+  });
+
+  it("parses single-endpoint array emitted by go compiler for a single endpoint config", () => {
+    process.env.GH_AW_OTLP_ENDPOINTS = JSON.stringify([{ url: "https://traces.example.com:4317" }]);
+    const result = parseOTLPEndpoints();
+    expect(result).toEqual([{ url: "https://traces.example.com:4317" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendOTLPToAllEndpoints
+// ---------------------------------------------------------------------------
+
+describe("sendOTLPToAllEndpoints", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sends to a single endpoint", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = buildOTLPPayload({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      spanName: "test.span",
+      startMs: 1000,
+      endMs: 2000,
+      serviceName: "gh-aw",
+      attributes: [],
+    });
+
+    await sendOTLPToAllEndpoints([{ url: "https://primary.example.com:4317" }], payload, { skipJSONL: true });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("https://primary.example.com:4317/v1/traces");
+  });
+
+  it("sends to multiple endpoints concurrently", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = buildOTLPPayload({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      spanName: "test.span",
+      startMs: 1000,
+      endMs: 2000,
+      serviceName: "gh-aw",
+      attributes: [],
+    });
+
+    await sendOTLPToAllEndpoints([{ url: "https://primary.example.com:4317" }, { url: "https://secondary.example.com:4317" }], payload, { skipJSONL: true });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const urls = mockFetch.mock.calls.map(c => c[0]).sort();
+    expect(urls).toEqual(["https://primary.example.com:4317/v1/traces", "https://secondary.example.com:4317/v1/traces"].sort());
+  });
+
+  it("uses per-endpoint headers (not global OTEL_EXPORTER_OTLP_HEADERS)", async () => {
+    process.env.OTEL_EXPORTER_OTLP_HEADERS = "X-Global=global";
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: "OK" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = buildOTLPPayload({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      spanName: "test.span",
+      startMs: 1000,
+      endMs: 2000,
+      serviceName: "gh-aw",
+      attributes: [],
+    });
+
+    await sendOTLPToAllEndpoints(
+      [
+        { url: "https://primary.example.com:4317", headers: "Authorization=Bearer tok1" },
+        { url: "https://secondary.example.com:4317", headers: "Authorization=Bearer tok2" },
+      ],
+      payload,
+      { skipJSONL: true }
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const call1 = mockFetch.mock.calls.find(c => c[0].includes("primary"));
+    const call2 = mockFetch.mock.calls.find(c => c[0].includes("secondary"));
+    expect(call1[1].headers["Authorization"]).toBe("Bearer tok1");
+    expect(call2[1].headers["Authorization"]).toBe("Bearer tok2");
+    // Global header should NOT be included since per-endpoint headers override it.
+    expect(call1[1].headers["X-Global"]).toBeUndefined();
+  });
+
+  it("continues to other endpoints when one fails", async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(url => {
+      callCount++;
+      if (url.includes("primary")) {
+        return Promise.reject(new Error("connection refused"));
+      }
+      return Promise.resolve({ ok: true, status: 200, statusText: "OK" });
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = buildOTLPPayload({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      spanName: "test.span",
+      startMs: 1000,
+      endMs: 2000,
+      serviceName: "gh-aw",
+      attributes: [],
+    });
+
+    // Should not throw even if one endpoint fails.
+    await expect(sendOTLPToAllEndpoints([{ url: "https://primary.example.com:4317" }, { url: "https://secondary.example.com:4317" }], payload, { skipJSONL: true, maxRetries: 0 })).resolves.toBeUndefined();
+
+    // Both endpoints were attempted.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("is a no-op when endpoints array is empty", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = buildOTLPPayload({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      spanName: "test.span",
+      startMs: 1000,
+      endMs: 2000,
+      serviceName: "gh-aw",
+      attributes: [],
+    });
+
+    await sendOTLPToAllEndpoints([], payload, { skipJSONL: true });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

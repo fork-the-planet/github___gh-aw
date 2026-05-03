@@ -97,7 +97,7 @@ func TestGetOTLPEndpointEnvValue(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "empty endpoint returns empty string",
+			name: "empty string endpoint returns empty string",
 			config: &FrontmatterConfig{
 				Observability: &ObservabilityConfig{
 					OTLP: &OTLPConfig{Endpoint: ""},
@@ -106,7 +106,7 @@ func TestGetOTLPEndpointEnvValue(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "static URL endpoint",
+			name: "static URL endpoint (string form)",
 			config: &FrontmatterConfig{
 				Observability: &ObservabilityConfig{
 					OTLP: &OTLPConfig{Endpoint: "https://traces.example.com:4317"},
@@ -115,13 +115,31 @@ func TestGetOTLPEndpointEnvValue(t *testing.T) {
 			expected: "https://traces.example.com:4317",
 		},
 		{
-			name: "secret expression endpoint",
+			name: "secret expression endpoint (string form)",
 			config: &FrontmatterConfig{
 				Observability: &ObservabilityConfig{
 					OTLP: &OTLPConfig{Endpoint: "${{ secrets.OTLP_ENDPOINT }}"},
 				},
 			},
 			expected: "${{ secrets.OTLP_ENDPOINT }}",
+		},
+		{
+			name: "object form returns empty string (only string form handled by this function)",
+			config: &FrontmatterConfig{
+				Observability: &ObservabilityConfig{
+					OTLP: &OTLPConfig{Endpoint: map[string]any{"url": "https://traces.example.com:4317"}},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "nil endpoint returns empty string",
+			config: &FrontmatterConfig{
+				Observability: &ObservabilityConfig{
+					OTLP: &OTLPConfig{Endpoint: nil},
+				},
+			},
+			expected: "",
 		},
 	}
 
@@ -429,7 +447,7 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			frontmatter: map[string]any{"observability": map[string]any{}},
 		},
 		{
-			name: "observability.otlp with endpoint",
+			name: "string form: plain URL",
 			frontmatter: map[string]any{
 				"observability": map[string]any{
 					"otlp": map[string]any{"endpoint": "https://traces.example.com:4317"},
@@ -438,7 +456,7 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			wantEndpoint: "https://traces.example.com:4317",
 		},
 		{
-			name: "observability.otlp with secret expression endpoint",
+			name: "string form: secret expression endpoint",
 			frontmatter: map[string]any{
 				"observability": map[string]any{
 					"otlp": map[string]any{"endpoint": "${{ secrets.GH_AW_OTEL_ENDPOINT }}"},
@@ -447,7 +465,7 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			wantEndpoint: "${{ secrets.GH_AW_OTEL_ENDPOINT }}",
 		},
 		{
-			name: "observability.otlp with endpoint and string headers (deprecated)",
+			name: "string form: endpoint with string headers (deprecated)",
 			frontmatter: map[string]any{
 				"observability": map[string]any{
 					"otlp": map[string]any{
@@ -461,7 +479,7 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			wantDeprecated: true,
 		},
 		{
-			name: "Sentry-style header with space in value (deprecated string form)",
+			name: "string form: Sentry-style header with space in value (deprecated string form)",
 			frontmatter: map[string]any{
 				"observability": map[string]any{
 					"otlp": map[string]any{
@@ -475,7 +493,7 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			wantDeprecated: true,
 		},
 		{
-			name: "observability.otlp with endpoint and map headers (not deprecated)",
+			name: "string form: endpoint with map headers (not deprecated)",
 			frontmatter: map[string]any{
 				"observability": map[string]any{
 					"otlp": map[string]any{
@@ -487,6 +505,59 @@ func TestExtractOTLPConfigFromRaw(t *testing.T) {
 			wantEndpoint:   "https://traces.example.com",
 			wantHeaders:    "Authorization=Bearer tok",
 			wantDeprecated: false,
+		},
+		{
+			name: "object form: extracts URL and per-endpoint headers",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{
+							"url":     "https://traces.example.com:4317",
+							"headers": map[string]any{"Authorization": "Bearer tok"},
+						},
+					},
+				},
+			},
+			wantEndpoint: "https://traces.example.com:4317",
+			wantHeaders:  "Authorization=Bearer tok",
+		},
+		{
+			name: "object form: missing URL returns empty",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{"headers": map[string]any{"Authorization": "Bearer tok"}},
+					},
+				},
+			},
+		},
+		{
+			name: "array form: returns only first element URL and headers",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://first.example.com:4317", "headers": map[string]any{"X-Key": "v1"}},
+							map[string]any{"url": "https://second.example.com:4317", "headers": map[string]any{"X-Key": "v2"}},
+						},
+					},
+				},
+			},
+			wantEndpoint: "https://first.example.com:4317",
+			wantHeaders:  "X-Key=v1",
+		},
+		{
+			name: "array form: empty URL in first element returns empty",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": ""},
+							map[string]any{"url": "https://second.example.com:4317"},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -980,5 +1051,370 @@ func TestObservabilityConfigParsing_MapHeaders(t *testing.T) {
 		headersStr, ok := config.Observability.OTLP.Headers.(string)
 		require.True(t, ok, "Headers should be a string when string form is used")
 		assert.Equal(t, "Authorization=Bearer tok", headersStr)
+	})
+}
+
+// TestCollectAllOTLPEndpoints verifies that endpoint entries are correctly parsed from
+// the polymorphic `endpoint` field (string, object, or array).
+func TestCollectAllOTLPEndpoints(t *testing.T) {
+	tests := []struct {
+		name        string
+		frontmatter map[string]any
+		wantEntries []otlpEndpointEntry
+		wantDep     bool
+	}{
+		{
+			name:        "empty frontmatter returns empty slice",
+			frontmatter: map[string]any{},
+			wantEntries: nil,
+		},
+		{
+			name: "string form: single URL",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": "https://traces.example.com:4317",
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://traces.example.com:4317"},
+			},
+		},
+		{
+			name: "string form: single URL with top-level headers (deprecated string form)",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": "https://traces.example.com:4317",
+						"headers":  "Authorization=Bearer tok",
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://traces.example.com:4317", Headers: "Authorization=Bearer tok"},
+			},
+			wantDep: true,
+		},
+		{
+			name: "string form: single URL with top-level headers (map form)",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": "https://traces.example.com:4317",
+						"headers":  map[string]any{"Authorization": "Bearer tok"},
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://traces.example.com:4317", Headers: "Authorization=Bearer tok"},
+			},
+		},
+		{
+			name: "object form: single endpoint with per-endpoint headers",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{
+							"url":     "https://traces.example.com:4317",
+							"headers": map[string]any{"X-API-Key": "key1"},
+						},
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://traces.example.com:4317", Headers: "X-API-Key=key1"},
+			},
+		},
+		{
+			name: "object form: single endpoint without headers",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{
+							"url": "https://traces.example.com:4317",
+						},
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://traces.example.com:4317"},
+			},
+		},
+		{
+			name: "array form: multiple endpoints",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://primary.example.com:4317"},
+							map[string]any{"url": "https://secondary.example.com:4317", "headers": map[string]any{"X-API-Key": "key2"}},
+						},
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://primary.example.com:4317"},
+				{URL: "https://secondary.example.com:4317", Headers: "X-API-Key=key2"},
+			},
+		},
+		{
+			name: "array form: entries with empty URL are skipped",
+			frontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": ""},
+							map[string]any{"url": "https://valid.example.com:4317"},
+						},
+					},
+				},
+			},
+			wantEntries: []otlpEndpointEntry{
+				{URL: "https://valid.example.com:4317"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotDep := collectAllOTLPEndpoints(tt.frontmatter)
+			assert.Equal(t, tt.wantEntries, got, "endpoint entries")
+			assert.Equal(t, tt.wantDep, gotDep, "deprecated flag")
+		})
+	}
+}
+
+// TestEncodeOTLPEndpoints verifies JSON serialisation of endpoint entries.
+func TestEncodeOTLPEndpoints(t *testing.T) {
+	t.Run("empty slice returns empty string", func(t *testing.T) {
+		assert.Empty(t, encodeOTLPEndpoints(nil))
+		assert.Empty(t, encodeOTLPEndpoints([]otlpEndpointEntry{}))
+	})
+
+	t.Run("single entry without headers", func(t *testing.T) {
+		encoded := encodeOTLPEndpoints([]otlpEndpointEntry{{URL: "https://traces.example.com:4317"}})
+		assert.JSONEq(t, `[{"url":"https://traces.example.com:4317"}]`, encoded)
+	})
+
+	t.Run("single entry with headers", func(t *testing.T) {
+		encoded := encodeOTLPEndpoints([]otlpEndpointEntry{{URL: "https://traces.example.com:4317", Headers: "Authorization=Bearer tok"}})
+		assert.JSONEq(t, `[{"url":"https://traces.example.com:4317","headers":"Authorization=Bearer tok"}]`, encoded)
+	})
+
+	t.Run("multiple entries", func(t *testing.T) {
+		encoded := encodeOTLPEndpoints([]otlpEndpointEntry{
+			{URL: "https://primary.example.com:4317", Headers: "Authorization=Bearer tok1"},
+			{URL: "https://secondary.example.com:4317", Headers: "Authorization=Bearer tok2"},
+		})
+		assert.JSONEq(t, `[{"url":"https://primary.example.com:4317","headers":"Authorization=Bearer tok1"},{"url":"https://secondary.example.com:4317","headers":"Authorization=Bearer tok2"}]`, encoded)
+	})
+}
+
+// TestAllOTLPHeaders verifies that allOTLPHeaders concatenates headers from all entries.
+func TestAllOTLPHeaders(t *testing.T) {
+	t.Run("empty entries returns empty string", func(t *testing.T) {
+		assert.Empty(t, allOTLPHeaders(nil))
+	})
+
+	t.Run("entries without headers returns empty string", func(t *testing.T) {
+		entries := []otlpEndpointEntry{{URL: "https://a.example.com"}, {URL: "https://b.example.com"}}
+		assert.Empty(t, allOTLPHeaders(entries))
+	})
+
+	t.Run("single entry with headers", func(t *testing.T) {
+		entries := []otlpEndpointEntry{{URL: "https://a.example.com", Headers: "Authorization=Bearer tok"}}
+		assert.Equal(t, "Authorization=Bearer tok", allOTLPHeaders(entries))
+	})
+
+	t.Run("multiple entries with headers are comma-joined", func(t *testing.T) {
+		entries := []otlpEndpointEntry{
+			{URL: "https://a.example.com", Headers: "Authorization=Bearer tok1"},
+			{URL: "https://b.example.com", Headers: "X-API-Key=key2"},
+		}
+		assert.Equal(t, "Authorization=Bearer tok1,X-API-Key=key2", allOTLPHeaders(entries))
+	})
+
+	t.Run("entries without headers are skipped", func(t *testing.T) {
+		entries := []otlpEndpointEntry{
+			{URL: "https://a.example.com", Headers: "Authorization=Bearer tok1"},
+			{URL: "https://b.example.com"},
+			{URL: "https://c.example.com", Headers: "X-API-Key=key3"},
+		}
+		assert.Equal(t, "Authorization=Bearer tok1,X-API-Key=key3", allOTLPHeaders(entries))
+	})
+}
+
+// TestInjectOTLPConfig_MultipleEndpoints verifies the multi-endpoint injection path.
+func TestInjectOTLPConfig_MultipleEndpoints(t *testing.T) {
+	c := &Compiler{}
+
+	t.Run("injects GH_AW_OTLP_ENDPOINTS for array endpoint", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://primary.example.com:4317"},
+							map[string]any{"url": "https://secondary.example.com:4317"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		require.NotEmpty(t, wd.Env, "Env should be set")
+		assert.Contains(t, wd.Env, "OTEL_EXPORTER_OTLP_ENDPOINT: https://primary.example.com:4317", "first endpoint should be set as primary")
+		assert.Contains(t, wd.Env, "GH_AW_OTLP_ENDPOINTS:", "multi-endpoint env var should be injected")
+		assert.Contains(t, wd.Env, "primary.example.com", "primary endpoint should appear in GH_AW_OTLP_ENDPOINTS")
+		assert.Contains(t, wd.Env, "secondary.example.com", "secondary endpoint should appear in GH_AW_OTLP_ENDPOINTS")
+	})
+
+	t.Run("adds all static endpoint domains to firewall allowlist", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://primary.example.com:4317"},
+							map[string]any{"url": "https://secondary.example.com:4317"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		require.NotNil(t, wd.NetworkPermissions, "NetworkPermissions should be created")
+		assert.Contains(t, wd.NetworkPermissions.Allowed, "primary.example.com")
+		assert.Contains(t, wd.NetworkPermissions.Allowed, "secondary.example.com")
+	})
+
+	t.Run("sets GH_AW_OTLP_ALL_HEADERS when multiple endpoints have headers", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://primary.example.com:4317", "headers": map[string]any{"Authorization": "Bearer tok1"}},
+							map[string]any{"url": "https://secondary.example.com:4317", "headers": map[string]any{"Authorization": "Bearer tok2"}},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		assert.Contains(t, wd.Env, "GH_AW_OTLP_ALL_HEADERS:", "all-headers env var should be injected for multiple endpoints")
+		assert.True(t, isOTLPHeadersPresent(wd), "isOTLPHeadersPresent should detect GH_AW_OTLP_ALL_HEADERS")
+	})
+
+	t.Run("does not set GH_AW_OTLP_ALL_HEADERS for single endpoint (string form)", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": "https://traces.example.com:4317",
+						"headers":  map[string]any{"Authorization": "Bearer tok"},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		assert.NotContains(t, wd.Env, "GH_AW_OTLP_ALL_HEADERS", "all-headers var should not be set for single endpoint")
+		assert.Contains(t, wd.Env, "OTEL_EXPORTER_OTLP_HEADERS:", "standard headers var should still be set")
+	})
+
+	t.Run("does not set GH_AW_OTLP_ALL_HEADERS for single endpoint (object form)", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{
+							"url":     "https://traces.example.com:4317",
+							"headers": map[string]any{"Authorization": "Bearer tok"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		assert.NotContains(t, wd.Env, "GH_AW_OTLP_ALL_HEADERS", "all-headers var should not be set for single endpoint")
+		assert.Contains(t, wd.Env, "OTEL_EXPORTER_OTLP_HEADERS:", "standard headers var should still be set")
+	})
+
+	t.Run("OTLPEndpoints field is set to JSON-encoded array", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "https://primary.example.com:4317"},
+							map[string]any{"url": "https://secondary.example.com:4317"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		require.NotEmpty(t, wd.OTLPEndpoints, "OTLPEndpoints field should be set")
+		assert.Contains(t, wd.OTLPEndpoints, "primary.example.com")
+		assert.Contains(t, wd.OTLPEndpoints, "secondary.example.com")
+	})
+
+	t.Run("expression-only endpoints do not add to firewall allowlist", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": []any{
+							map[string]any{"url": "${{ secrets.OTLP_ENDPOINT1 }}"},
+							map[string]any{"url": "${{ secrets.OTLP_ENDPOINT2 }}"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		assert.Nil(t, wd.NetworkPermissions, "expression endpoints should not add to firewall (NetworkPermissions should be nil)")
+	})
+
+	t.Run("object form: injects single endpoint with per-endpoint headers", func(t *testing.T) {
+		wd := &WorkflowData{
+			RawFrontmatter: map[string]any{
+				"observability": map[string]any{
+					"otlp": map[string]any{
+						"endpoint": map[string]any{
+							"url":     "https://traces.example.com:4317",
+							"headers": map[string]any{"Authorization": "Bearer tok"},
+						},
+					},
+				},
+			},
+		}
+		c.injectOTLPConfig(wd)
+
+		require.NotEmpty(t, wd.Env)
+		assert.Contains(t, wd.Env, "OTEL_EXPORTER_OTLP_ENDPOINT: https://traces.example.com:4317")
+		assert.Contains(t, wd.Env, "OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer tok")
+		assert.Contains(t, wd.Env, "GH_AW_OTLP_ENDPOINTS:")
+		require.NotNil(t, wd.NetworkPermissions)
+		assert.Contains(t, wd.NetworkPermissions.Allowed, "traces.example.com")
+	})
+}
+
+// TestIsOTLPHeadersPresent_AllHeaders verifies that isOTLPHeadersPresent detects
+// GH_AW_OTLP_ALL_HEADERS in addition to OTEL_EXPORTER_OTLP_HEADERS.
+func TestIsOTLPHeadersPresent_AllHeaders(t *testing.T) {
+	t.Run("detects GH_AW_OTLP_ALL_HEADERS", func(t *testing.T) {
+		wd := &WorkflowData{
+			Env: "env:\n  OTEL_EXPORTER_OTLP_ENDPOINT: https://traces.example.com\n  GH_AW_OTLP_ALL_HEADERS: Authorization=Bearer tok1,Authorization=Bearer tok2",
+		}
+		assert.True(t, isOTLPHeadersPresent(wd), "should detect GH_AW_OTLP_ALL_HEADERS")
 	})
 }
