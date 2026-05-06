@@ -227,6 +227,77 @@ func TestBuildSharedPRCheckoutSteps(t *testing.T) {
 				"ref: release/v2.0",
 			},
 		},
+		{
+			name: "push-to-pull-request-branch with target-repo and no create-pull-request",
+			safeOutputs: &SafeOutputsConfig{
+				PushToPullRequestBranch: &PushToPullRequestBranchConfig{
+					TargetRepoSlug: "microsoft/vscode",
+				},
+			},
+			checkContains: []string{
+				"repository: microsoft/vscode",
+				`REPO_NAME: "microsoft/vscode"`,
+				// Cross-repo checkout must not use github.ref_name
+				"ref: ${{ steps.extract-base-branch.outputs.base-branch || github.base_ref || github.event.pull_request.base.ref || github.event.repository.default_branch }}",
+			},
+			checkNotContains: []string{
+				"github.ref_name",
+			},
+		},
+		{
+			name: "update-pull-request target-repo does not affect shared git checkout (API-only operation)",
+			safeOutputs: &SafeOutputsConfig{
+				UpdatePullRequests: &UpdatePullRequestsConfig{
+					UpdateEntityConfig: UpdateEntityConfig{
+						SafeOutputTargetConfig: SafeOutputTargetConfig{TargetRepoSlug: "microsoft/vscode"},
+					},
+				},
+				PushToPullRequestBranch: &PushToPullRequestBranchConfig{},
+			},
+			// update-pull-request is API-only; its target-repo must NOT set repository:/REPO_NAME
+			checkNotContains: []string{
+				"repository: microsoft/vscode",
+				`REPO_NAME: "microsoft/vscode"`,
+			},
+		},
+		{
+			name: "push-to-pull-request-branch target-repo takes precedence over update-pull-request target-repo",
+			safeOutputs: &SafeOutputsConfig{
+				PushToPullRequestBranch: &PushToPullRequestBranchConfig{
+					TargetRepoSlug: "org/push-branch-target",
+				},
+				UpdatePullRequests: &UpdatePullRequestsConfig{
+					UpdateEntityConfig: UpdateEntityConfig{
+						SafeOutputTargetConfig: SafeOutputTargetConfig{TargetRepoSlug: "org/update-pr-target"},
+					},
+				},
+			},
+			checkContains: []string{
+				"repository: org/push-branch-target",
+				`REPO_NAME: "org/push-branch-target"`,
+			},
+			checkNotContains: []string{
+				"org/update-pr-target",
+			},
+		},
+		{
+			name: "create-pull-request target-repo takes precedence over push-to-pull-request-branch target-repo",
+			safeOutputs: &SafeOutputsConfig{
+				CreatePullRequests: &CreatePullRequestsConfig{
+					TargetRepoSlug: "org/create-pr-target",
+				},
+				PushToPullRequestBranch: &PushToPullRequestBranchConfig{
+					TargetRepoSlug: "org/push-branch-target",
+				},
+			},
+			checkContains: []string{
+				"repository: org/create-pr-target",
+				`REPO_NAME: "org/create-pr-target"`,
+			},
+			checkNotContains: []string{
+				"org/push-branch-target",
+			},
+		},
 	}
 
 	for _, tt := range tests {
