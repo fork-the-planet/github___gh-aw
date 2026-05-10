@@ -217,6 +217,30 @@ This is a test workflow with multiple cache-memory entries.
 	t.Logf("Successfully verified cache memory instructions handle multiple caches")
 }
 
+func TestDailyFunctionNamerColdStartHandling(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("Failed to find repo root: %v", err)
+	}
+
+	workflowFile := filepath.Join(repoRoot, ".github", "workflows", "daily-function-namer.md")
+	content, err := os.ReadFile(workflowFile)
+	if err != nil {
+		t.Fatalf("Failed to read workflow file: %v", err)
+	}
+
+	workflow := string(content)
+	coldStartGuidance := "**On cold start** (`/tmp/gh-aw/cache-memory/function-namer-state.json` missing): treat this as expected initialization, not a failure. Do **not** call `missing_data` for a missing state file on first run or cold cache; run the Step 1 script as written, accept `LAST_INDEX=-1`, and continue."
+	if !strings.Contains(workflow, coldStartGuidance) {
+		t.Fatal("Expected daily-function-namer workflow to include explicit cold-start guidance")
+	}
+
+	stepFiveGuidance := "If the state file was missing at the start of the run, initialize it from scratch here instead of reporting missing cache data."
+	if !strings.Contains(workflow, stepFiveGuidance) {
+		t.Fatal("Expected daily-function-namer workflow to initialize missing cold-start state instead of reporting missing data")
+	}
+}
+
 // ============================================================================
 // Playwright Prompt Tests
 // ============================================================================
