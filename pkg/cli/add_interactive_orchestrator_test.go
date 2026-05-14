@@ -13,6 +13,7 @@ func TestAddInteractiveConfig_determineFilesToAdd(t *testing.T) {
 	tests := []struct {
 		name          string
 		workflowSpecs []string
+		resolved      *ResolvedWorkflows
 		wantFiles     []string
 		wantErr       bool
 	}{
@@ -39,12 +40,51 @@ func TestAddInteractiveConfig_determineFilesToAdd(t *testing.T) {
 			workflowSpecs: []string{"invalid-spec"},
 			wantErr:       true,
 		},
+		{
+			name:          "repository package uses resolved workflows",
+			workflowSpecs: []string{"owner/repo"},
+			resolved: &ResolvedWorkflows{
+				Workflows: []*ResolvedWorkflow{
+					{
+						Spec: &WorkflowSpec{WorkflowName: "review"},
+					},
+					{
+						Spec: &WorkflowSpec{WorkflowName: "nightly-review"},
+					},
+				},
+			},
+			wantFiles: []string{"review.md", "review.lock.yml", "nightly-review.md", "nightly-review.lock.yml"},
+			wantErr:   false,
+		},
+		{
+			name:          "invalid resolved workflow fails loudly",
+			workflowSpecs: []string{"owner/repo"},
+			resolved: &ResolvedWorkflows{
+				Workflows: []*ResolvedWorkflow{
+					{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:          "resolved workflow with blank name fails loudly",
+			workflowSpecs: []string{"owner/repo"},
+			resolved: &ResolvedWorkflows{
+				Workflows: []*ResolvedWorkflow{
+					{
+						Spec: &WorkflowSpec{WorkflowName: "   "},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &AddInteractiveConfig{
-				WorkflowSpecs: tt.workflowSpecs,
+				WorkflowSpecs:     tt.workflowSpecs,
+				resolvedWorkflows: tt.resolved,
 			}
 
 			workflowFiles, initFiles, err := config.determineFilesToAdd()
@@ -58,6 +98,31 @@ func TestAddInteractiveConfig_determineFilesToAdd(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddInteractiveConfig_primaryWorkflowName(t *testing.T) {
+	t.Run("uses resolved workflow for repository package", func(t *testing.T) {
+		config := &AddInteractiveConfig{
+			WorkflowSpecs: []string{"owner/repo"},
+			resolvedWorkflows: &ResolvedWorkflows{
+				Workflows: []*ResolvedWorkflow{
+					{
+						Spec: &WorkflowSpec{WorkflowName: "review"},
+					},
+				},
+			},
+		}
+
+		assert.Equal(t, "review", config.primaryWorkflowName())
+	})
+
+	t.Run("falls back to parsed workflow spec", func(t *testing.T) {
+		config := &AddInteractiveConfig{
+			WorkflowSpecs: []string{"owner/repo/test-workflow"},
+		}
+
+		assert.Equal(t, "test-workflow", config.primaryWorkflowName())
+	})
 }
 
 func TestAddInteractiveConfig_showWorkflowDescriptions(t *testing.T) {
