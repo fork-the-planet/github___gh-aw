@@ -410,6 +410,7 @@ export default defineConfig({
 						{ label: 'Tools (Cache Memory)', link: '/reference/cache-memory/' },
 						{ label: 'Tools (Repo Memory)', link: '/reference/repo-memory/' },
 						{ label: 'Tools (Playwright)', link: '/reference/playwright/' },
+						{ label: 'Tools (Serena)', link: '/reference/serena/' },
 						{ label: 'Tools (Web Search)', link: '/reference/web-search/' },
 						{ label: 'Triggering CI', link: '/reference/triggering-ci/' },
 						{ label: 'Workflow Structure', link: '/reference/workflow-structure/' },
