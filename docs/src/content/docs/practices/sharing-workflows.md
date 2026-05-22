@@ -1,5 +1,5 @@
 ---
-title: Sharing Workflows
+title: Sharing Workflows in the Organization
 description: Share, reuse, and govern workflows across repositories and organizations.
 ---
 

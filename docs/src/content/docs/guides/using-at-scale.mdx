@@ -4,14 +4,13 @@ description: Guidance for adopting, sharing, and governing GitHub Agentic Workfl
 ---
 
 When agentic workflows move beyond a single repository and into an organization or enterprise, something qualitatively different becomes possible. Workflows can coordinate or scale across dozens of repositories simultaneously. For example, workflows can:
-- Roll out changes org-wide
-- Assess code quality across 100s of repos
-- Synchronize dependency updates
-- Propagate coding policy changes
-- Maintain living documentation that stays current automatically
-- Shrink backlogs in multiple maintained repos
-- Enforce coding standards across teams
-- Aggregate issue tracking into a single control plane
+- [Roll out changes org-wide](/gh-aw/examples/multi-repo/dependabot-rollout/)
+- [Assess code quality across 100s of repos](/gh-aw/examples/multi-repo/code-quality-monitoring/)
+- [Synchronize dependency updates](/gh-aw/examples/multi-repo/dependabot-rollout/)
+- [Propagate coding policy changes](/gh-aw/examples/multi-repo/feature-sync/)
+- [Shrink backlogs in multiple maintained repos](/gh-aw/examples/maintaining-repos/)
+- [Enforce coding standards across teams](/gh-aw/examples/multi-repo/code-quality-monitoring/)
+- [Aggregate issue tracking into a single control plane](/gh-aw/examples/multi-repo/issue-tracking/)
 
 The possibilities are vast, but so are the challenges of secure authentication, cost management, and operational control at scale.
 
@@ -26,9 +25,13 @@ In this guide, we will explore recurring topics in organization and enterprise a
 - Safe rollout strategies for introducing production writes gradually
 - A/B experiments for measuring the effect of different prompts over time.
 
-## Sharing Workflows
+## Reusing and Sharing Workflows in the Organization
 
-[Sharing Workflows](/gh-aw/practices/sharing-workflows/) describes how workflows can be reused across repositories and organizations. It covers imports, reusable components, and central workflow repositories.
+There are two complementary layers to workflow distribution across an organization.
+
+[Reusing Workflows](/gh-aw/guides/packaging-imports/) covers the developer-facing mechanics: use `gh aw add` or `gh aw add-wizard` to install a workflow from another repository, `imports:` to pull in shared components (tool configs, MCP server definitions, prompt snippets) into any workflow, and `gh aw update` to pull in upstream changes while preserving local edits. See [Imports](/gh-aw/reference/imports/) for the import system's path formats and merge semantics.
+
+[Sharing Workflows in the Organization](/gh-aw/practices/sharing-workflows/) covers the organizational governance layer: recommended techniques like maintaining a central `agentic-workflows` repository as the source of truth, versioning with exact tags (`@v1.2.0`), moving major refs (`@v1`), or SHA pins, parameterized shared components via `import-schema`, and controlling discoverability with `private: true`.
 
 ## Private Repositories
 
