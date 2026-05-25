@@ -177,18 +177,9 @@ describe("sourceLabel", () => {
 });
 
 describe("eventIcon", () => {
-  const allKinds = [
-    KIND_TOOL_CALL,
-    KIND_DIFC_FILTERED,
-    KIND_GUARD_BLOCKED,
-    KIND_NET_ALLOWED,
-    KIND_NET_BLOCKED,
-    KIND_AGENT_TURN,
-    KIND_AGENT_TOOL_START,
-    KIND_AGENT_TOOL_DONE,
-  ];
+  const allKinds = [KIND_TOOL_CALL, KIND_DIFC_FILTERED, KIND_GUARD_BLOCKED, KIND_NET_ALLOWED, KIND_NET_BLOCKED, KIND_AGENT_TURN, KIND_AGENT_TOOL_START, KIND_AGENT_TOOL_DONE];
 
-  it.each(allKinds)("returns non-default icon for %s", (kind) => {
+  it.each(allKinds)("returns non-default icon for %s", kind => {
     const icon = eventIcon(kind);
     expect(icon).not.toBe("·");
     expect(icon.length).toBeGreaterThan(0);
@@ -343,19 +334,14 @@ describe("collectFirewallEvents", () => {
 
   it("classifies entries with 4xx/5xx HTTP status as net_blocked", () => {
     const auditPath = path.join(tmpDir, "audit.jsonl");
-    writeJsonl(auditPath, [
-      { ts: 1705312800.0, host: "blocked.example.com", status: 403 },
-    ]);
+    writeJsonl(auditPath, [{ ts: 1705312800.0, host: "blocked.example.com", status: 403 }]);
     const events = collectFirewallEvents({ auditJsonlPath: auditPath });
     expect(events[0].kind).toBe(KIND_NET_BLOCKED);
   });
 
   it("skips entries with missing ts", () => {
     const auditPath = path.join(tmpDir, "audit.jsonl");
-    writeJsonl(auditPath, [
-      { host: "no-ts.example.com" },
-      { ts: 1705312800.0, host: "ok.example.com" },
-    ]);
+    writeJsonl(auditPath, [{ host: "no-ts.example.com" }, { ts: 1705312800.0, host: "ok.example.com" }]);
     const events = collectFirewallEvents({ auditJsonlPath: auditPath });
     expect(events).toHaveLength(1);
   });
@@ -486,9 +472,7 @@ describe("collectAgentEvents", () => {
     const sessionDir = path.join(tmpDir, "sandbox", "agent", "logs", "copilot-session-state", "uuid-xyz");
     fs.mkdirSync(sessionDir, { recursive: true });
     const eventsPath = path.join(sessionDir, "events.jsonl");
-    writeJsonl(eventsPath, [
-      { type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} },
-    ]);
+    writeJsonl(eventsPath, [{ type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} }]);
     const events = collectAgentEvents({ logDir: tmpDir });
     expect(events).toHaveLength(1);
   });
@@ -512,21 +496,15 @@ describe("collectUnifiedTimelineEvents", () => {
   it("merges and sorts events from all three sources", () => {
     // Gateway at t+2s
     const gwPath = path.join(tmpDir, "gateway.jsonl");
-    writeJsonl(gwPath, [
-      { timestamp: "2024-01-15T10:00:02Z", event: "tool_call", server_name: "srv", tool_name: "get_file" },
-    ]);
+    writeJsonl(gwPath, [{ timestamp: "2024-01-15T10:00:02Z", event: "tool_call", server_name: "srv", tool_name: "get_file" }]);
 
     // Firewall at t+3s
     const auditPath = path.join(tmpDir, "audit.jsonl");
-    writeJsonl(auditPath, [
-      { ts: new Date("2024-01-15T10:00:03Z").getTime() / 1000, host: "api.example.com", decision: "TCP_TUNNEL:HIER_DIRECT" },
-    ]);
+    writeJsonl(auditPath, [{ ts: new Date("2024-01-15T10:00:03Z").getTime() / 1000, host: "api.example.com", decision: "TCP_TUNNEL:HIER_DIRECT" }]);
 
     // Agent at t+1s
     const eventsPath = path.join(tmpDir, "events.jsonl");
-    writeJsonl(eventsPath, [
-      { type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} },
-    ]);
+    writeJsonl(eventsPath, [{ type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} }]);
 
     const events = collectUnifiedTimelineEvents({
       gatewayJsonlPath: gwPath,
@@ -557,9 +535,7 @@ describe("buildUnifiedTimelineMarkdown", () => {
   });
 
   it("wraps output in a <details> block", () => {
-    const events = [
-      { source: SOURCE_GATEWAY, kind: KIND_TOOL_CALL, time: new Date("2024-01-15T10:00:02Z"), detail: "srv/get_file", status: "success" },
-    ];
+    const events = [{ source: SOURCE_GATEWAY, kind: KIND_TOOL_CALL, time: new Date("2024-01-15T10:00:02Z"), detail: "srv/get_file", status: "success" }];
     const md = buildUnifiedTimelineMarkdown(events);
     expect(md).toContain("<details>");
     expect(md).toContain("</details>");
@@ -579,9 +555,7 @@ describe("buildUnifiedTimelineMarkdown", () => {
   });
 
   it("contains a Markdown table header row", () => {
-    const events = [
-      { source: SOURCE_AGENT, kind: KIND_AGENT_TURN, time: new Date("2024-01-15T10:00:01Z"), detail: "turn 1", status: "" },
-    ];
+    const events = [{ source: SOURCE_AGENT, kind: KIND_AGENT_TURN, time: new Date("2024-01-15T10:00:01Z"), detail: "turn 1", status: "" }];
     const md = buildUnifiedTimelineMarkdown(events);
     expect(md).toContain("| Time | Src | Kind | Detail | Status |");
   });
@@ -602,9 +576,7 @@ describe("buildUnifiedTimelineMarkdown", () => {
   });
 
   it("escapes pipe characters in detail/status to avoid breaking Markdown tables", () => {
-    const events = [
-      { source: SOURCE_GATEWAY, kind: KIND_TOOL_CALL, time: new Date("2024-01-15T10:00:00Z"), detail: "srv|tool", status: "ok|extra" },
-    ];
+    const events = [{ source: SOURCE_GATEWAY, kind: KIND_TOOL_CALL, time: new Date("2024-01-15T10:00:00Z"), detail: "srv|tool", status: "ok|extra" }];
     const md = buildUnifiedTimelineMarkdown(events);
     // After escaping, literal | inside cells should not appear
     const rows = md.split("\n").filter(l => l.startsWith("| 10:"));
@@ -631,9 +603,7 @@ describe("generateUnifiedTimelineSummary", () => {
 
   it("renders a non-empty summary when at least one source has events", () => {
     const eventsPath = path.join(tmpDir, "events.jsonl");
-    writeJsonl(eventsPath, [
-      { type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} },
-    ]);
+    writeJsonl(eventsPath, [{ type: "user.message", id: "m1", timestamp: "2024-01-15T10:00:01Z", data: {} }]);
     const result = generateUnifiedTimelineSummary({
       gatewayJsonlPath: "/nonexistent",
       rpcMessagesPath: "/nonexistent2",

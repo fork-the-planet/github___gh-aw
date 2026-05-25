@@ -131,9 +131,12 @@ function escMd(s) {
  */
 function sourceLabel(source) {
   switch (source) {
-    case SOURCE_GATEWAY: return "GW";
-    case SOURCE_FIREWALL: return "FW";
-    case SOURCE_AGENT: return "AG";
+    case SOURCE_GATEWAY:
+      return "GW";
+    case SOURCE_FIREWALL:
+      return "FW";
+    case SOURCE_AGENT:
+      return "AG";
     default:
       return source.length < 2 ? source.toUpperCase() : source.slice(0, 2).toUpperCase();
   }
@@ -145,15 +148,24 @@ function sourceLabel(source) {
  */
 function eventIcon(kind) {
   switch (kind) {
-    case KIND_TOOL_CALL: return "🔧";
-    case KIND_DIFC_FILTERED: return "🚫";
-    case KIND_GUARD_BLOCKED: return "🛡";
-    case KIND_NET_ALLOWED: return "✓";
-    case KIND_NET_BLOCKED: return "✗";
-    case KIND_AGENT_TURN: return "💬";
-    case KIND_AGENT_TOOL_START: return "▶";
-    case KIND_AGENT_TOOL_DONE: return "■";
-    default: return "·";
+    case KIND_TOOL_CALL:
+      return "🔧";
+    case KIND_DIFC_FILTERED:
+      return "🚫";
+    case KIND_GUARD_BLOCKED:
+      return "🛡";
+    case KIND_NET_ALLOWED:
+      return "✓";
+    case KIND_NET_BLOCKED:
+      return "✗";
+    case KIND_AGENT_TURN:
+      return "💬";
+    case KIND_AGENT_TOOL_START:
+      return "▶";
+    case KIND_AGENT_TOOL_DONE:
+      return "■";
+    default:
+      return "·";
   }
 }
 
@@ -163,15 +175,24 @@ function eventIcon(kind) {
  */
 function kindLabel(kind) {
   switch (kind) {
-    case KIND_TOOL_CALL: return "tool_call";
-    case KIND_DIFC_FILTERED: return "difc_filtered";
-    case KIND_GUARD_BLOCKED: return "guard_blocked";
-    case KIND_NET_ALLOWED: return "net_allowed";
-    case KIND_NET_BLOCKED: return "net_blocked";
-    case KIND_AGENT_TURN: return "agent_turn";
-    case KIND_AGENT_TOOL_START: return "tool_start";
-    case KIND_AGENT_TOOL_DONE: return "tool_done";
-    default: return kind;
+    case KIND_TOOL_CALL:
+      return "tool_call";
+    case KIND_DIFC_FILTERED:
+      return "difc_filtered";
+    case KIND_GUARD_BLOCKED:
+      return "guard_blocked";
+    case KIND_NET_ALLOWED:
+      return "net_allowed";
+    case KIND_NET_BLOCKED:
+      return "net_blocked";
+    case KIND_AGENT_TURN:
+      return "agent_turn";
+    case KIND_AGENT_TOOL_START:
+      return "tool_start";
+    case KIND_AGENT_TOOL_DONE:
+      return "tool_done";
+    default:
+      return kind;
   }
 }
 
@@ -297,11 +318,10 @@ function collectFirewallEvents(opts = {}) {
 
     // Decision field: "TCP_TUNNEL:HIER_DIRECT" or "TCP_DENIED:..." etc.
     const decision = entry.decision ?? entry.squid_request_status ?? "";
-    const blocked = /denied|blocked|reject/i.test(decision) ||
-      (typeof status === "number" && status >= 400 && status < 600);
+    const blocked = /denied|blocked|reject/i.test(decision) || (typeof status === "number" && status >= 400 && status < 600);
 
     const detail = truncate([host, method].filter(Boolean).join(" "), 48);
-    const statusStr = status ? String(status) : (blocked ? "blocked" : "allowed");
+    const statusStr = status ? String(status) : blocked ? "blocked" : "allowed";
 
     events.push({
       source: SOURCE_FIREWALL,
@@ -442,26 +462,55 @@ function buildUnifiedTimelineMarkdown(events) {
   if (!events || events.length === 0) return "";
 
   // Build summary counts
-  let gwCount = 0, fwCount = 0, agCount = 0;
-  let toolCalls = 0, difcFiltered = 0, guardBlocked = 0;
-  let netAllowed = 0, netBlocked = 0;
-  let agentTurns = 0, agentToolStarts = 0, agentToolDones = 0;
+  let gwCount = 0,
+    fwCount = 0,
+    agCount = 0;
+  let toolCalls = 0,
+    difcFiltered = 0,
+    guardBlocked = 0;
+  let netAllowed = 0,
+    netBlocked = 0;
+  let agentTurns = 0,
+    agentToolStarts = 0,
+    agentToolDones = 0;
 
   for (const evt of events) {
     switch (evt.source) {
-      case SOURCE_GATEWAY: gwCount++; break;
-      case SOURCE_FIREWALL: fwCount++; break;
-      case SOURCE_AGENT: agCount++; break;
+      case SOURCE_GATEWAY:
+        gwCount++;
+        break;
+      case SOURCE_FIREWALL:
+        fwCount++;
+        break;
+      case SOURCE_AGENT:
+        agCount++;
+        break;
     }
     switch (evt.kind) {
-      case KIND_TOOL_CALL: toolCalls++; break;
-      case KIND_DIFC_FILTERED: difcFiltered++; break;
-      case KIND_GUARD_BLOCKED: guardBlocked++; break;
-      case KIND_NET_ALLOWED: netAllowed++; break;
-      case KIND_NET_BLOCKED: netBlocked++; break;
-      case KIND_AGENT_TURN: agentTurns++; break;
-      case KIND_AGENT_TOOL_START: agentToolStarts++; break;
-      case KIND_AGENT_TOOL_DONE: agentToolDones++; break;
+      case KIND_TOOL_CALL:
+        toolCalls++;
+        break;
+      case KIND_DIFC_FILTERED:
+        difcFiltered++;
+        break;
+      case KIND_GUARD_BLOCKED:
+        guardBlocked++;
+        break;
+      case KIND_NET_ALLOWED:
+        netAllowed++;
+        break;
+      case KIND_NET_BLOCKED:
+        netBlocked++;
+        break;
+      case KIND_AGENT_TURN:
+        agentTurns++;
+        break;
+      case KIND_AGENT_TOOL_START:
+        agentToolStarts++;
+        break;
+      case KIND_AGENT_TOOL_DONE:
+        agentToolDones++;
+        break;
     }
   }
 

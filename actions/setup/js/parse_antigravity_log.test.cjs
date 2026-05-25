@@ -56,11 +56,7 @@ describe("parse_antigravity_log.cjs", () => {
     });
 
     it("should skip non-JSON lines mixed with valid JSONL", () => {
-      const logContent = [
-        "DEBUG: starting antigravity",
-        JSON.stringify({ response: "Final answer", stats: {} }),
-        "DEBUG: done",
-      ].join("\n");
+      const logContent = ["DEBUG: starting antigravity", JSON.stringify({ response: "Final answer", stats: {} }), "DEBUG: done"].join("\n");
 
       const result = parseAntigravityLog(logContent);
 
@@ -69,10 +65,7 @@ describe("parse_antigravity_log.cjs", () => {
     });
 
     it("should use the last valid JSON line as the final response", () => {
-      const logContent = [
-        JSON.stringify({ response: "Partial answer", stats: {} }),
-        JSON.stringify({ response: "Complete final answer", stats: {} }),
-      ].join("\n");
+      const logContent = [JSON.stringify({ response: "Partial answer", stats: {} }), JSON.stringify({ response: "Complete final answer", stats: {} })].join("\n");
 
       const result = parseAntigravityLog(logContent);
 
@@ -140,10 +133,7 @@ describe("parse_antigravity_log.cjs", () => {
     });
 
     it("should skip JSON lines that do not have a response string field", () => {
-      const logContent = [
-        JSON.stringify({ type: "debug", message: "starting" }),
-        JSON.stringify({ response: "Real response", stats: {} }),
-      ].join("\n");
+      const logContent = [JSON.stringify({ type: "debug", message: "starting" }), JSON.stringify({ response: "Real response", stats: {} })].join("\n");
 
       const result = parseAntigravityLog(logContent);
 

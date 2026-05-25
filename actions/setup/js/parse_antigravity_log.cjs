@@ -78,7 +78,7 @@ function parseAntigravityLog(logContent) {
   if (stats.models && typeof stats.models === "object") {
     for (const modelStats of Object.values(stats.models)) {
       if (modelStats && typeof modelStats === "object") {
-        const { input_tokens = 0, output_tokens = 0 } = /** @type {any} */ (modelStats);
+        const { input_tokens = 0, output_tokens = 0 } = /** @type {any} */ modelStats;
         totalInputTokens += input_tokens;
         totalOutputTokens += output_tokens;
       }
