@@ -94,7 +94,9 @@ func (e *CopilotEngine) GetInstallationSteps(workflowData *WorkflowData) []GitHu
 	// Use the installer script for global installation
 	copilotInstallLog.Print("Using new installer script for Copilot installation")
 	npmSteps := GenerateCopilotInstallerSteps(copilotVersion, "Install GitHub Copilot CLI")
-	return BuildNpmEngineInstallStepsWithAWF(npmSteps, workflowData)
+	steps := BuildNpmEngineInstallStepsWithAWF(npmSteps, workflowData)
+
+	return steps
 }
 
 // generateAWFInstallationStep creates a GitHub Actions step to install the AWF binary

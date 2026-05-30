@@ -496,6 +496,13 @@ touch %s
 		env["AWF_REFLECT_ENABLED"] = "1"
 	}
 
+	// When copilot-sdk: true, provide the SDK URI that the harness uses to start a
+	// separate Copilot CLI headless server and that child processes use to connect.
+	if workflowData.EngineConfig != nil && workflowData.EngineConfig.CopilotSDK {
+		env[constants.CopilotSDKURIEnvVar] = fmt.Sprintf("http://127.0.0.1:%d", constants.DefaultCopilotSDKPort)
+		copilotExecLog.Printf("copilot-sdk enabled: set %s=%s", constants.CopilotSDKURIEnvVar, env[constants.CopilotSDKURIEnvVar])
+	}
+
 	// Add HTTP MCP header secrets to env for passthrough
 	headerSecrets := collectHTTPMCPHeaderSecrets(workflowData.Tools)
 	for varName, secretExpr := range headerSecrets {

@@ -70,6 +70,11 @@ type EngineConfig struct {
 	// Extensions is a list of engine-specific plugin names to install before launching the engine.
 	// Currently used by the Pi engine: each entry is passed to `pi install <extension>`.
 	Extensions []string
+
+	// CopilotSDK enables the GitHub Copilot SDK integration.
+	// When true the compiler enables a harness-managed Copilot CLI headless sidecar
+	// and sets COPILOT_SDK_URI on child processes so the SDK can connect to it.
+	CopilotSDK bool
 }
 
 // EngineAuthConfig represents engine.auth frontmatter settings that map to
@@ -497,6 +502,15 @@ func (c *Compiler) ExtractEngineConfig(frontmatter map[string]any) (string, *Eng
 			// Return the ID as the engineSetting for backwards compatibility
 			config.MaxRuns = topLevelMaxRuns
 			config.MaxEffectiveTokens = topLevelMaxEffectiveTokens
+
+			// Extract optional 'copilot-sdk' field (bool; copilot engine only)
+			if sdkVal, hasSDK := engineObj["copilot-sdk"]; hasSDK {
+				if sdkBool, ok := sdkVal.(bool); ok {
+					config.CopilotSDK = sdkBool
+					engineLog.Printf("Extracted copilot-sdk: %v", config.CopilotSDK)
+				}
+			}
+
 			engineLog.Printf("Extracted engine configuration: ID=%s", config.ID)
 			return config.ID, config
 		}
