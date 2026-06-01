@@ -10,6 +10,8 @@ import (
 )
 
 const maxDailyEffectiveTokensField = "max-daily-effective-tokens"
+const maxDailyEffectiveTokensEnvVar = "GH_AW_MAX_DAILY_EFFECTIVE_TOKENS"
+const maxDailyEffectiveTokensConfiguredIfExpr = "${{ env.GH_AW_MAX_DAILY_EFFECTIVE_TOKENS != '' }}"
 
 // parseMaxDailyEffectiveTokensValue normalizes max-daily-effective-tokens
 // frontmatter values into a runtime-ready string.
@@ -89,5 +91,35 @@ func resolveMaxDailyEffectiveTokens(frontmatter map[string]any, importedJSON str
 }
 
 func hasMaxDailyEffectiveTokensGuardrail(data *WorkflowData) bool {
+	if data == nil {
+		return false
+	}
+	if hasMaxDailyEffectiveTokensFrontmatterConfig(data) {
+		return true
+	}
+	return hasMaxDailyEffectiveTokensEnvConfig(data.Env)
+}
+
+// hasMaxDailyEffectiveTokensFrontmatterConfig reports whether the daily ET threshold
+// is configured via the max-daily-effective-tokens frontmatter field. When true, the
+// threshold is emitted into the step env block rather than the workflow-level env, so
+// runtime expressions referencing env.GH_AW_MAX_DAILY_EFFECTIVE_TOKENS must not be
+// used to gate step execution or setup inputs.
+func hasMaxDailyEffectiveTokensFrontmatterConfig(data *WorkflowData) bool {
 	return data != nil && data.MaxDailyEffectiveTokens != nil && strings.TrimSpace(*data.MaxDailyEffectiveTokens) != ""
+}
+
+func hasMaxDailyEffectiveTokensEnvConfig(envYAML string) bool {
+	for _, line := range strings.Split(envYAML, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, maxDailyEffectiveTokensEnvVar+":") ||
+			strings.HasPrefix(trimmed, `"`+maxDailyEffectiveTokensEnvVar+`":`) ||
+			strings.HasPrefix(trimmed, `'`+maxDailyEffectiveTokensEnvVar+`':`) {
+			return true
+		}
+	}
+	return false
 }

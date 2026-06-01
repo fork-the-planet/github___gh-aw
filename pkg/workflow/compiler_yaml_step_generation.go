@@ -165,8 +165,13 @@ func (c *Compiler) generateOTLPOIDCMintStep(data *WorkflowData) []string {
 }
 
 func (c *Compiler) generateSetupStep(data *WorkflowData, setupActionRef string, destination string, enableArtifactClient bool, traceID string, parentSpanID string) []string {
+	return c.generateSetupStepWithArtifactClientCondition(data, setupActionRef, destination, enableArtifactClient, traceID, parentSpanID, "")
+}
+
+func (c *Compiler) generateSetupStepWithArtifactClientCondition(data *WorkflowData, setupActionRef string, destination string, enableArtifactClient bool, traceID string, parentSpanID string, artifactClientCondition string) []string {
 	lines := c.generateOTLPOIDCMintStep(data)
 	hasOTLPOIDC := len(lines) > 0
+	artifactClientCondition = strings.TrimSpace(artifactClientCondition)
 
 	setupEngineID := ""
 	if data != nil {
@@ -216,7 +221,11 @@ func (c *Compiler) generateSetupStep(data *WorkflowData, setupActionRef string, 
 			setupLines = append(setupLines, "          INPUT_OTLP_OIDC_TOKEN: ${{ steps.mint-otlp-oidc-token.outputs.token }}\n")
 		}
 		if enableArtifactClient {
-			setupLines = append(setupLines, "          INPUT_SAFE_OUTPUT_ARTIFACT_CLIENT: 'true'\n")
+			if artifactClientCondition != "" {
+				setupLines = append(setupLines, fmt.Sprintf("          INPUT_SAFE_OUTPUT_ARTIFACT_CLIENT: %s\n", artifactClientCondition))
+			} else {
+				setupLines = append(setupLines, "          INPUT_SAFE_OUTPUT_ARTIFACT_CLIENT: 'true'\n")
+			}
 		}
 		lines = append(lines, setupLines...)
 		return lines
@@ -242,7 +251,11 @@ func (c *Compiler) generateSetupStep(data *WorkflowData, setupActionRef string, 
 		setupLines = append(setupLines, "          otlp-oidc-token: ${{ steps.mint-otlp-oidc-token.outputs.token }}\n")
 	}
 	if enableArtifactClient {
-		setupLines = append(setupLines, "          safe-output-artifact-client: 'true'\n")
+		if artifactClientCondition != "" {
+			setupLines = append(setupLines, fmt.Sprintf("          safe-output-artifact-client: %s\n", artifactClientCondition))
+		} else {
+			setupLines = append(setupLines, "          safe-output-artifact-client: 'true'\n")
+		}
 	}
 	setupLines = append(setupLines,
 		"        env:\n",

@@ -20,6 +20,7 @@ func TestResolveMaxDailyEffectiveTokens(t *testing.T) {
 		if got == nil || *got != "1234" {
 			t.Fatalf("expected literal top-level value, got %v", got)
 		}
+
 	})
 
 	t.Run("falls back to imported expression", func(t *testing.T) {
@@ -53,6 +54,46 @@ func TestResolveMaxDailyEffectiveTokens(t *testing.T) {
 			t.Fatalf("expected explicit disable to skip the guardrail, got %v", *got)
 		}
 	})
+}
+
+func TestHasMaxDailyEffectiveTokensEnvConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{
+			name: "detects unquoted key",
+			env: `GH_AW_MAX_DAILY_EFFECTIVE_TOKENS: "1234"
+OTHER_KEY: "x"`,
+			want: true,
+		},
+		{
+			name: "detects quoted key",
+			env:  `"GH_AW_MAX_DAILY_EFFECTIVE_TOKENS": "1234"`,
+			want: true,
+		},
+		{
+			name: "ignores comments and substrings",
+			env: `# GH_AW_MAX_DAILY_EFFECTIVE_TOKENS: "1234"
+SOME_GH_AW_MAX_DAILY_EFFECTIVE_TOKENS_SUFFIX: "1234"
+NOTE: "GH_AW_MAX_DAILY_EFFECTIVE_TOKENS configured elsewhere"`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := hasMaxDailyEffectiveTokensEnvConfig(tt.env)
+			if got != tt.want {
+				t.Fatalf("hasMaxDailyEffectiveTokensEnvConfig() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestDailyEffectiveWorkflowGuardrailInCompiledWorkflow(t *testing.T) {
@@ -98,6 +139,9 @@ Guardrail test workflow`
 	if !strings.Contains(lockStr, "id: daily-effective-workflow-guardrail") {
 		t.Fatal("expected activation job to include the daily workflow ET guardrail step")
 	}
+	if strings.Contains(lockStr, "if: ${{ env.GH_AW_MAX_DAILY_EFFECTIVE_TOKENS != '' }}") {
+		t.Fatal("expected frontmatter-configured guardrail step to run unconditionally (threshold is in step env, not workflow env)")
+	}
 	if !strings.Contains(lockStr, "check_daily_effective_workflow_guardrail.cjs") {
 		t.Fatal("expected activation job to call check_daily_effective_workflow_guardrail.cjs")
 	}
@@ -129,7 +173,7 @@ Guardrail test workflow`
 		t.Fatal("expected activation permissions to avoid issues: write for the daily ET guardrail")
 	}
 	if !strings.Contains(activationSection, "safe-output-artifact-client: 'true'") {
-		t.Fatal("expected setup step to install @actions/artifact when the daily ET guardrail is configured")
+		t.Fatal("expected frontmatter-configured guardrail to install @actions/artifact unconditionally")
 	}
 }
 
@@ -169,5 +213,49 @@ No daily guardrail`
 	}
 	if strings.Contains(lockStr, "GH_AW_DAILY_EFFECTIVE_WORKFLOW_") {
 		t.Fatal("expected workflows without the daily ET guardrail to omit daily ET env vars")
+	}
+}
+
+func TestDailyEffectiveWorkflowGuardrailConfiguredViaEnvVar(t *testing.T) {
+	testDir := testutil.TempDir(t, "daily-effective-workflow-env-guardrail-*")
+	workflowFile := filepath.Join(testDir, "daily-guardrail-env.md")
+
+	workflow := `---
+on:
+  workflow_dispatch:
+  stale-check: false
+env:
+  GH_AW_MAX_DAILY_EFFECTIVE_TOKENS: "5000000"
+safe-outputs:
+  add-comment:
+    max: 1
+---
+
+Daily guardrail via env var`
+
+	if err := os.WriteFile(workflowFile, []byte(workflow), 0o644); err != nil {
+		t.Fatalf("failed to write test workflow: %v", err)
+	}
+
+	compiler := NewCompiler()
+	if err := compiler.CompileWorkflow(workflowFile); err != nil {
+		t.Fatalf("failed to compile workflow: %v", err)
+	}
+
+	lockFile := stringutil.MarkdownToLockFile(workflowFile)
+	lockContent, err := os.ReadFile(lockFile)
+	if err != nil {
+		t.Fatalf("failed to read lock file: %v", err)
+	}
+	lockStr := string(lockContent)
+
+	if !strings.Contains(lockStr, "id: daily-effective-workflow-guardrail") {
+		t.Fatal("expected activation job to include the daily ET guardrail step when env var is configured")
+	}
+	if !strings.Contains(lockStr, "if: ${{ env.GH_AW_MAX_DAILY_EFFECTIVE_TOKENS != '' }}") {
+		t.Fatal("expected daily ET guardrail step to gate execution on GH_AW_MAX_DAILY_EFFECTIVE_TOKENS")
+	}
+	if !strings.Contains(lockStr, "safe-output-artifact-client: ${{ env.GH_AW_MAX_DAILY_EFFECTIVE_TOKENS != '' }}") {
+		t.Fatal("expected setup step to conditionally install artifact client when daily ET guardrail is env-configured")
 	}
 }
