@@ -118,6 +118,21 @@ describe("parse_token_usage", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
+    /**
+     * @param {string} summaryText
+     * @param {Array<[string, string, string]>} rows [alias, input, output]
+     */
+    function expectTokenUsageTableRows(summaryText, rows) {
+      const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(summaryText).toContain("| # | Alias | Input | Output |");
+      for (const [alias, input, output] of rows) {
+        const aliasPattern = escapeRegex(alias);
+        const inputPattern = escapeRegex(input);
+        const outputPattern = escapeRegex(output);
+        expect(summaryText).toMatch(new RegExp(`\\|\\s*\\d+\\s*\\|\\s*${aliasPattern}\\s*\\|\\s*${inputPattern}\\s*\\|\\s*${outputPattern}\\s*\\|`));
+      }
+    }
+
     test("skips summary when token usage file does not exist", async () => {
       await main();
 
@@ -348,8 +363,10 @@ describe("parse_token_usage", () => {
 
       const summaryCall = mockCore.summary.addRaw.mock.calls[0];
       expect(summaryCall[0]).toContain("### Token Usage");
-      expect(summaryCall[0]).toContain("◉ sonnet46");
-      expect(summaryCall[0]).toContain("■ gpt40");
+      expectTokenUsageTableRows(summaryCall[0], [
+        ["sonnet46", "100", "200"],
+        ["gpt40", "50", "80"],
+      ]);
       expect(summaryCall[0]).toContain("**Total**");
 
       const agentUsage = JSON.parse(fs.readFileSync(agentUsageFile, "utf8"));
@@ -386,8 +403,10 @@ describe("parse_token_usage", () => {
       await main();
 
       const summaryCall = mockCore.summary.addRaw.mock.calls[0];
-      expect(summaryCall[0]).toContain("◉ sonnet46");
-      expect(summaryCall[0]).toContain("■ gpt40");
+      expectTokenUsageTableRows(summaryCall[0], [
+        ["sonnet46", "100", "200"],
+        ["gpt40", "50", "80"],
+      ]);
 
       const agentUsage = JSON.parse(fs.readFileSync(agentUsageFile, "utf8"));
       expect(agentUsage.input_tokens).toBe(150);
@@ -452,9 +471,11 @@ describe("parse_token_usage", () => {
       await main();
 
       const summaryCall = mockCore.summary.addRaw.mock.calls[0];
-      expect(summaryCall[0]).toContain("◉ sonnet46");
-      expect(summaryCall[0]).toContain("▲ haiku45");
-      expect(summaryCall[0]).toContain("■ gpt40");
+      expectTokenUsageTableRows(summaryCall[0], [
+        ["sonnet46", "100", "200"],
+        ["haiku45", "50", "75"],
+        ["gpt40", "20", "30"],
+      ]);
 
       const agentUsage = JSON.parse(fs.readFileSync(agentUsageFile, "utf8"));
       expect(agentUsage.input_tokens).toBe(170);
