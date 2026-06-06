@@ -3033,11 +3033,12 @@ describe("handle_agent_failure", () => {
       fs.mkdirSync(promptsDir, { recursive: true });
       fs.writeFileSync(
         path.join(promptsDir, "effective_tokens_rate_limit_error.md"),
-        "**AI Credits Budget Guidance**: The run hit a legacy effective-token rate-limit signal from the API proxy. gh-aw now uses AI Credits (AIC) as the primary cost metric, so migrate per-run budgeting to `max-ai-credits`.\n\n" +
+        "> [!WARNING]\n" +
+          "> **AI Credits Budget Guidance**: The run hit a legacy effective-token rate-limit signal from the API proxy. gh-aw now uses AI Credits (AIC) as the primary cost metric, so migrate per-run budgeting to `max-ai-credits`.\n\n" +
           "<details>\n" +
           "<summary>Why this happened and how to optimize</summary>\n\n" +
           "- Learn about [AI Credits]({ai_credits_spec_link}).\n" +
-          "{usage_line}{budget_line}{run_line}\n" +
+          "{budget_line}\n" +
           "- `max-effective-tokens` is deprecated; migrate to `max-ai-credits` by running `gh aw fix --write`, or update manually (1 AIC = 10,000 ET):\n" +
           "  ```yaml\n" +
           "  # before\n" +
@@ -3045,7 +3046,6 @@ describe("handle_agent_failure", () => {
           "  # after\n" +
           "  max-ai-credits: 500\n" +
           "  ```\n\n" +
-          "{et_table_section}\n" +
           "- To budget and optimize this workflow, follow the [cost management guidance]({cost_management_link}).\n" +
           "</details>\n"
       );
@@ -3068,59 +3068,55 @@ describe("handle_agent_failure", () => {
       }
     });
 
-    it("formats effective token values in friendly compact form", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "2500000", "https://example.com/run/1");
-      expect(result).toContain("Effective tokens used: `10M`");
-      expect(result).toContain("Configured ET budget: `2.5M`");
+    it("converts legacy ET budget to max-ai-credits guidance", () => {
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "2500000");
+      expect(result).toContain("Suggested `max-ai-credits`: `250`");
     });
 
     it("returns empty string when rate-limit error is not set", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(false, "10000000", "2500000", "https://example.com/run/1");
+      const result = buildEffectiveTokensRateLimitErrorContext(false, "2500000");
       expect(result).toBe("");
     });
 
-    it("falls back to raw values when effective token values are not numeric", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "unknown", "n/a", "https://example.com/run/1");
-      expect(result).toContain("Effective tokens used: `unknown`");
-      expect(result).toContain("Configured ET budget: `n/a`");
+    it("omits suggested AI credits when legacy ET budget is not numeric", () => {
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "n/a");
+      expect(result).not.toContain("Suggested `max-ai-credits`:");
     });
 
     it("omits optional lines when values are missing", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "", "", "");
-      expect(result).not.toContain("Effective tokens used:");
-      expect(result).not.toContain("Configured ET budget:");
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "");
+      expect(result).not.toContain("Suggested `max-ai-credits`:");
       expect(result).not.toContain("- Run:");
     });
 
     it("includes a link to the AI Credits specification docs", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "25000000", "https://example.com/run/1");
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "25000000");
       expect(result).toContain("https://github.github.com/gh-aw/specs/ai-credits-specification/");
     });
 
     it("includes a link to the cost management guide", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "25000000", "https://example.com/run/1");
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "25000000");
       expect(result).toContain("https://github.github.com/gh-aw/reference/cost-management/");
     });
 
-    it("formats the run URL as a markdown link", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "25000000", "https://example.com/run/1");
-      expect(result).toContain("- Run: [https://example.com/run/1](https://example.com/run/1)");
+    it("uses GitHub alert syntax for AI credits budget guidance", () => {
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "25000000");
+      expect(result).toContain("> [!WARNING]");
+      expect(result).toContain("> **AI Credits Budget Guidance**");
     });
 
     it("wraps ET guidance in a collapsible details section", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "25000000", "https://example.com/run/1");
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "25000000");
       expect(result).toContain("<summary>Why this happened and how to optimize</summary>");
       expect(result).toContain("cost management guidance");
       expect(result).toContain("max-ai-credits");
     });
 
-    it("includes a collapsible details section for ET computation", () => {
-      const result = buildEffectiveTokensRateLimitErrorContext(true, "10000000", "25000000", "https://example.com/run/1");
-      expect(result).toContain("<details>");
-      expect(result).toContain("</details>");
-      expect(result).toContain("AIC computation details");
-      expect(result).not.toContain("<summary>ET computation details (formula:");
-      expect(result).toContain("<sub>ET formula:");
+    it("does not include ET computation details", () => {
+      const result = buildEffectiveTokensRateLimitErrorContext(true, "25000000");
+      expect(result).not.toContain("Effective tokens used:");
+      expect(result).not.toContain("- Run:");
+      expect(result).not.toContain("<sub>ET formula:");
     });
   });
 
