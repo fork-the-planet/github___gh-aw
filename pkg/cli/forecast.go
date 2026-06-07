@@ -51,8 +51,9 @@ var (
 	// forecastDownloadRunArtifacts uses a forecast-specific implementation that downloads
 	// only the usage artifact and skips workflow run log downloads (not needed for AIC computation).
 	forecastDownloadRunArtifacts = forecastDownloadUsageArtifact
-	forecastAnalyzeTokenUsage    = analyzeTokenUsage
-	forecastRateLimitSleep       = func(ctx context.Context, delay time.Duration) error {
+	// Forecast only needs TotalAIC; avoid effective-token computation/logging in this path.
+	forecastAnalyzeTokenUsage = analyzeTokenUsageAICOnly
+	forecastRateLimitSleep    = func(ctx context.Context, delay time.Duration) error {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 
@@ -76,12 +77,18 @@ type ForecastRunSample struct {
 	// Date is the ISO-8601 calendar date the run started (YYYY-MM-DD).
 	// Empty when the run's start timestamp is unavailable.
 	Date string `json:"date,omitempty"`
+	// RunURL links to the GitHub Actions run details page.
+	RunURL string `json:"run_url,omitempty"`
 }
 
 // ForecastWorkflowResult contains the projected metrics for a single workflow.
 type ForecastWorkflowResult struct {
 	// WorkflowID is the short identifier of the workflow (basename without .md).
 	WorkflowID string `json:"workflow_id"`
+	// WorkflowPath is the workflow file path when available (e.g. ".github/workflows/ci.yml").
+	WorkflowPath string `json:"workflow_path,omitempty"`
+	// Engines lists engine IDs configured by the workflow frontmatter.
+	Engines []string `json:"engines,omitempty"`
 	// Period is the projection window ("week" or "month").
 	Period string `json:"period"`
 	// SampledRuns is the number of completed runs used to derive per-run averages.
@@ -521,6 +528,7 @@ func forecastWorkflow(ctx context.Context, workflowName, startDate string, confi
 	result.ActiveTriggers = meta.activeTriggers
 	result.ConcurrencyLimit = meta.concurrencyLimit
 	result.ExperimentVariants = meta.variants
+	result.Engines = meta.engines
 
 	// Determine the API name used to filter workflow runs (prefer lock file name).
 	apiName := workflowName
@@ -589,7 +597,13 @@ func forecastWorkflow(ctx context.Context, workflowName, startDate string, confi
 		if !r.StartedAt.IsZero() {
 			sample.Date = r.StartedAt.Format("2006-01-02")
 		}
+		if r.URL != "" {
+			sample.RunURL = r.URL
+		}
 		samples = append(samples, sample)
+		if result.WorkflowPath == "" && r.WorkflowPath != "" {
+			result.WorkflowPath = r.WorkflowPath
+		}
 	}
 	result.RunSamples = samples
 
@@ -623,9 +637,9 @@ func forecastWorkflow(ctx context.Context, workflowName, startDate string, confi
 	// (bootstrap), and per-run success (Bernoulli) to produce P10/P50/P90 ranges.
 	// Two independent RNGs ensure the weekly and monthly simulations are uncorrelated.
 	seed := time.Now().UnixNano()
-	rng := rand.New(rand.NewSource(seed))           //nolint:gosec // non-cryptographic simulation RNG
-	rng2 := rand.New(rand.NewSource(seed + 1))      //nolint:gosec
-	rng3 := rand.New(rand.NewSource(seed + 2))      //nolint:gosec
+	rng := rand.New(rand.NewSource(seed))      //nolint:gosec // non-cryptographic simulation RNG
+	rng2 := rand.New(rand.NewSource(seed + 1)) //nolint:gosec
+	rng3 := rand.New(rand.NewSource(seed + 2)) //nolint:gosec
 	result.MonteCarlo = runMonteCarlo(aicObservations, successCount, result.ObservedRunsPerPeriod, rng)
 	result.WeeklyMonteCarlo = runMonteCarlo(aicObservations, successCount, weeklyRuns, rng2)
 	result.MonthlyMonteCarlo = runMonteCarlo(aicObservations, successCount, monthlyRuns, rng3)
@@ -641,6 +655,7 @@ type workflowMeta struct {
 	activeTriggers   []string
 	concurrencyLimit int
 	variants         []ForecastVariantResult
+	engines          []string
 }
 
 // loadWorkflowMeta reads the workflow's Markdown file and extracts frontmatter metadata.
@@ -681,8 +696,52 @@ func loadWorkflowMeta(workflowName string, verbose bool) workflowMeta {
 
 	// Collect experiment variant names (counts come from run history later).
 	meta.variants = extractExperimentVariantStubs(cfg)
+	meta.engines = extractEngineNames(cfg)
 
 	return meta
+}
+
+func extractEngineNames(cfg *workflow.FrontmatterConfig) []string {
+	seen := make(map[string]struct{})
+	var names []string
+	var collect func(any)
+	collect = func(value any) {
+		switch typed := value.(type) {
+		case string:
+			name := strings.TrimSpace(typed)
+			if name == "" {
+				return
+			}
+			if _, exists := seen[name]; exists {
+				return
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		case []any:
+			for _, entry := range typed {
+				collect(entry)
+			}
+		case map[string]any:
+			if id, ok := typed["id"]; ok {
+				collect(id)
+			}
+			if engine, ok := typed["engine"]; ok {
+				collect(engine)
+			}
+			if fallback, ok := typed["fallback"]; ok {
+				collect(fallback)
+			}
+			if fallbacks, ok := typed["fallbacks"]; ok {
+				collect(fallbacks)
+			}
+			if engines, ok := typed["engines"]; ok {
+				collect(engines)
+			}
+		}
+	}
+	collect(cfg.Engine)
+	sort.Strings(names)
+	return names
 }
 
 // findMarkdownFileForWorkflow tries to locate the .md source file for a workflow.
@@ -824,27 +883,36 @@ func loadCachedRunAIC(ctx context.Context, runID int64, verbose bool) float64 {
 		forecastRunLog.Printf("AIC cache hit for run %d: aic=%.3f (from run_summary.json)", runID, summary.TokenUsage.TotalAIC)
 		return summary.TokenUsage.TotalAIC
 	}
+	if ok && summary != nil && summary.TokenUsage != nil && summary.TokenUsage.TotalAIC <= 0 {
+		forecastRunLog.Printf("AIC cache stale/empty for run %d: cached_total_aic=%.3f, token_file_recompute_required=true", runID, summary.TokenUsage.TotalAIC)
+	}
 
 	forecastRunLog.Printf("AIC cache miss for run %d; downloading usage artifact to %s", runID, dir)
 	if verbose {
 		fmt.Fprintln(os.Stderr, console.FormatVerboseMessage(fmt.Sprintf("Downloading usage artifact for run %d…", runID)))
 	}
 
-	if err := forecastDownloadRunArtifacts(ctx, runID, dir, verbose, "", "", "", []string{"usage"}); err != nil {
+	tryDownload := func(filter []string) error {
+		return forecastDownloadRunArtifacts(ctx, runID, dir, verbose, "", "", "", filter)
+	}
+	usageFilter := []string{"usage"}
+	if err := tryDownload(usageFilter); err != nil {
 		if errors.Is(err, ErrNoArtifacts) {
 			forecastRunLog.Printf("No usage artifact for run %d; AIC will be 0", runID)
+			return 0
 		} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			forecastRunLog.Printf("Usage artifact download for run %d interrupted: %v", runID, err)
 			if verbose {
 				fmt.Fprintln(os.Stderr, console.FormatVerboseMessage(fmt.Sprintf("Usage artifact download for run %d interrupted: %v", runID, err)))
 			}
+			return 0
 		} else {
 			forecastRunLog.Printf("Failed to download usage artifact for run %d: %v", runID, err)
 			if verbose {
 				fmt.Fprintln(os.Stderr, console.FormatVerboseMessage(fmt.Sprintf("Failed to download usage artifact for run %d: %v", runID, err)))
 			}
+			return 0
 		}
-		return 0
 	}
 
 	tokenUsage, err := forecastAnalyzeTokenUsage(dir, verbose)
@@ -907,7 +975,7 @@ func forecastDownloadUsageArtifact(ctx context.Context, runID int64, outputDir s
 		}
 	}
 
-	forecastRunLog.Printf("Run %d: found %d downloadable artifact(s) matching filter %v: %v", runID, len(downloadableNames), artifactFilter, downloadableNames)
+	forecastRunLog.Printf("Run %d: listed artifacts=%v, filter=%v, downloadable=%v", runID, artifactNames, artifactFilter, downloadableNames)
 
 	if len(downloadableNames) == 0 {
 		// No usage artifact — clean up empty directory and report.
@@ -1075,6 +1143,7 @@ func renderForecastJSON(output ForecastResult) error {
 // forecastTableRow is a flattened struct used for console table rendering.
 type forecastTableRow struct {
 	Workflow    string `json:"workflow"     console:"header:Workflow"`
+	Engines     string `json:"engines"      console:"header:Engines"`
 	Runs        int    `json:"runs"         console:"header:Runs"`
 	P50PerRun   string `json:"p50_per_run"  console:"header:P50/Run"`
 	P95PerRun   string `json:"p95_per_run"  console:"header:P95/Run"`
@@ -1113,6 +1182,7 @@ func renderForecastTable(output ForecastResult, config ForecastConfig) error {
 
 		row := forecastTableRow{
 			Workflow:    wf.WorkflowID + unreliableMark,
+			Engines:     formatEngineList(wf.Engines),
 			Runs:        wf.SampledRuns,
 			P50PerRun:   formatForecastAIC(wf.P50AIC),
 			P95PerRun:   formatForecastAIC(wf.P95AIC),
@@ -1295,6 +1365,13 @@ func formatForecastAIC(value float64) string {
 		return fmt.Sprintf("%.1fK", value/1000)
 	}
 	return fmt.Sprintf("%.2fM", value/1_000_000)
+}
+
+func formatEngineList(engines []string) string {
+	if len(engines) == 0 {
+		return "-"
+	}
+	return strings.Join(engines, ", ")
 }
 
 // formatForecastSignedAIC formats a signed AIC value, preserving
