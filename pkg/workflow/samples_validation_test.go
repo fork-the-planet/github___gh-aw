@@ -168,3 +168,123 @@ func TestCollectSampleEntries_SidecarPartitioning(t *testing.T) {
 		t.Errorf("expected patch to be present in Sidecars as a git diff string, got %#v", e.Sidecars["patch"])
 	}
 }
+
+// TestValidateSafeOutputsSamples_RuntimeExpressionsBypassValidation verifies
+// that sample values containing `${{ ... }}` GitHub Actions expressions
+// (e.g. `item_number: ${{ github.event.inputs.issue_number }}`) bypass
+// compile-time schema validation, since GitHub Actions substitutes them on
+// the runner before apply_samples.cjs reads GH_AW_SAMPLES.
+//
+// Regression for https://github.com/github/gh-aw/issues/37532.
+func TestValidateSafeOutputsSamples_RuntimeExpressionsBypassValidation(t *testing.T) {
+	cfg := &SafeOutputsConfig{
+		AddLabels: &AddLabelsConfig{
+			BaseSafeOutputConfig: BaseSafeOutputConfig{
+				Samples: []map[string]any{
+					{
+						// item_number's pattern is `^(\d+|#?aw_[A-Za-z0-9_]{3,12})$`,
+						// so the raw expression string would otherwise fail validation.
+						"item_number": "${{ github.event.inputs.issue_number }}",
+						"labels":      []any{"runtime-sample"},
+					},
+				},
+			},
+		},
+	}
+	if err := validateSafeOutputsSamples(cfg); err != nil {
+		t.Fatalf("expected runtime expression in sample value to bypass validation, got: %v", err)
+	}
+
+	// Original sample must be preserved (validation must not mutate) so that
+	// generateSamplesReplayStep emits the live `${{ ... }}` expression for
+	// GitHub Actions to substitute at runtime.
+	got := cfg.AddLabels.Samples[0]["item_number"]
+	if got != "${{ github.event.inputs.issue_number }}" {
+		t.Errorf("validation must not mutate the original sample; got item_number=%v", got)
+	}
+}
+
+// TestValidateSafeOutputsSamples_RuntimeExpressionsInNestedValues verifies
+// that runtime-expression substitution works for nested arrays and objects
+// (e.g. fields inside create_issue.fields[*].value).
+func TestValidateSafeOutputsSamples_RuntimeExpressionsInNestedValues(t *testing.T) {
+	cfg := &SafeOutputsConfig{
+		CreateIssues: &CreateIssuesConfig{
+			BaseSafeOutputConfig: BaseSafeOutputConfig{
+				Samples: []map[string]any{
+					{
+						"title": "Issue ${{ github.event.inputs.title_suffix }}",
+						"body":  "Body",
+						"labels": []any{
+							"static-label",
+							"${{ github.event.inputs.dynamic_label }}",
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := validateSafeOutputsSamples(cfg); err != nil {
+		t.Fatalf("expected nested runtime expressions to bypass validation, got: %v", err)
+	}
+}
+
+// TestValidateSafeOutputsSamples_NonExpressionErrorsStillReported verifies
+// that swapping in the runtime-expression placeholder does NOT mask genuine
+// validation errors on adjacent fields (e.g. a still-missing required field).
+func TestValidateSafeOutputsSamples_NonExpressionErrorsStillReported(t *testing.T) {
+	cfg := &SafeOutputsConfig{
+		CreateIssues: &CreateIssuesConfig{
+			BaseSafeOutputConfig: BaseSafeOutputConfig{
+				Samples: []map[string]any{
+					{
+						// title is required and is missing; an expression on
+						// the body must not paper over that.
+						"body": "${{ github.event.inputs.body }}",
+					},
+				},
+			},
+		},
+	}
+	if err := validateSafeOutputsSamples(cfg); err == nil {
+		t.Fatal("expected missing-title error to still surface even though body is a runtime expression")
+	}
+}
+
+// TestSubstituteRuntimeExpressionsForValidation_LeavesLiteralsUntouched
+// verifies that the substitution helper only touches strings containing
+// `${{ ... }}` and otherwise returns equivalent values.
+func TestSubstituteRuntimeExpressionsForValidation_LeavesLiteralsUntouched(t *testing.T) {
+	in := map[string]any{
+		"title": "literal title",
+		"count": float64(5),
+		"flags": []any{"a", "${{ github.run_id }}", "b"},
+		"nested": map[string]any{
+			"id": "${{ inputs.id }}",
+		},
+	}
+	out := substituteRuntimeExpressionsForValidation(in).(map[string]any)
+
+	if out["title"] != "literal title" {
+		t.Errorf("expected literal string to be unchanged, got %v", out["title"])
+	}
+	if out["count"] != float64(5) {
+		t.Errorf("expected numeric value to be unchanged, got %v", out["count"])
+	}
+	flags := out["flags"].([]any)
+	if flags[0] != "a" || flags[2] != "b" {
+		t.Errorf("expected literal array elements to be unchanged, got %v", flags)
+	}
+	if flags[1] != sampleRuntimeExpressionPlaceholder {
+		t.Errorf("expected array element with ${{...}} to be substituted, got %v", flags[1])
+	}
+	nested := out["nested"].(map[string]any)
+	if nested["id"] != sampleRuntimeExpressionPlaceholder {
+		t.Errorf("expected nested ${{...}} string to be substituted, got %v", nested["id"])
+	}
+
+	// Original input must not be mutated.
+	if in["nested"].(map[string]any)["id"] != "${{ inputs.id }}" {
+		t.Error("substituteRuntimeExpressionsForValidation must not mutate its input")
+	}
+}

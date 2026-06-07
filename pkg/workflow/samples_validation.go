@@ -4,12 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+var sampleRuntimeExpressionPattern = regexp.MustCompile(`(?s)\$\{\{.*?\}\}`)
+
+// sampleRuntimeExpressionPlaceholder is the sentinel substituted for any
+// sample value that contains a `${{ ... }}` GitHub Actions expression, used
+// for compile-time schema validation only. It is chosen to satisfy every
+// pattern currently declared in pkg/workflow/js/safe_outputs_tools.json that
+// accepts an `aw_`-prefixed temporary id (3-12 chars after the prefix).
+const sampleRuntimeExpressionPlaceholder = "aw_sample"
 
 // sampleSidecarFields lists fields recognized inside a `samples` entry
 // that are NOT passed to the MCP tool's `tools/call` arguments. They are stripped
@@ -136,11 +146,44 @@ func validateSamplesForTool(toolName string, samples []map[string]any) error {
 	sidecars := sampleSidecarFields[toolName]
 	for i, sample := range samples {
 		stripped := stripSidecarFields(sample, sidecars)
-		if err := schema.Validate(stripped); err != nil {
+		substituted, ok := substituteRuntimeExpressionsForValidation(stripped).(map[string]any)
+		if !ok {
+			substituted = stripped
+		}
+		if err := schema.Validate(substituted); err != nil {
 			return fmt.Errorf("safe-outputs.%s.samples[%d]: %w", displayKey, i, err)
 		}
 	}
 	return nil
+}
+
+// substituteRuntimeExpressionsForValidation returns a deep copy of v in which
+// every string value containing a `${{ ... }}` GitHub Actions expression has
+// been replaced by sampleRuntimeExpressionPlaceholder. The original sample is
+// left unchanged and is what gets emitted into the lock file, so the real
+// expression is preserved for GitHub Actions to substitute at runtime.
+func substituteRuntimeExpressionsForValidation(v any) any {
+	switch val := v.(type) {
+	case string:
+		if sampleRuntimeExpressionPattern.MatchString(val) {
+			return sampleRuntimeExpressionPlaceholder
+		}
+		return val
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, vv := range val {
+			out[k] = substituteRuntimeExpressionsForValidation(vv)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, vv := range val {
+			out[i] = substituteRuntimeExpressionsForValidation(vv)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // stripSidecarFields returns a shallow copy of sample with sidecar keys removed.
