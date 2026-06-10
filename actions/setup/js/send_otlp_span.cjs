@@ -2063,8 +2063,17 @@ async function sendJobConclusionSpan(spanName, options = {}) {
   attributes.push(...buildEpisodeAttributesFromContext(awInfo, runId, runAttempt));
   // GH_AW_AIC may be propagated to downstream jobs via workflow outputs, so gate it
   // behind jobEmitsOwnTokenUsage to prevent non-owning jobs from re-emitting it.
-  const aiCredits = jobEmitsOwnTokenUsage ? (normalizeNonNegativeNumber(process.env.GH_AW_AIC) ?? agentUsage.ai_credits) : undefined;
-  if (typeof aiCredits === "number" && aiCredits > 0) {
+  // Ranked AIC sources: env var → non-zero file → engine metrics → file (may be zero).
+  // When the firewall proxy writes ai_credits=0 to agent_usage.json, the engine result
+  // event (from agent-stdio.log) is tried next so its non-zero value is not lost.
+  // The final fallback to aiCreditsFromFile (zero) makes observability gaps visible
+  // (zero != no-data) and lets the Sentry EAP schema infer the attribute as numeric
+  // so sum()/avg()/percentile() aggregations work without manual schema configuration.
+  const aiCreditsFromEnv = normalizeNonNegativeNumber(process.env.GH_AW_AIC);
+  const aiCreditsFromFile = agentUsage.ai_credits;
+  const aiCreditsFromMetrics = runtimeMetrics.tokenUsage?.ai_credits;
+  const aiCredits = jobEmitsOwnTokenUsage ? (aiCreditsFromEnv ?? (aiCreditsFromFile > 0 ? aiCreditsFromFile : (aiCreditsFromMetrics ?? aiCreditsFromFile))) : undefined;
+  if (typeof aiCredits === "number") {
     attributes.push(buildAttr("gh-aw.aic", aiCredits));
   }
   if (typeof runtimeMetrics.turns === "number") {
