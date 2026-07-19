@@ -33,6 +33,7 @@ module.exports = [
       "gh-aw-custom/require-new-url-try-catch": "warn",
       "gh-aw-custom/prefer-core-logging": "warn",
       "gh-aw-custom/no-core-error-then-process-exit": "warn",
+      "gh-aw-custom/require-env-int-nan-guard": "warn",
     },
   },
   {
